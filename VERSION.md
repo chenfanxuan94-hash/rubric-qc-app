@@ -1,6 +1,13 @@
 # Rubric QC Tool — version log
 
-## v3.2.0  (current) — accuracy & canonical-fidelity pass
+## v3.2.1  (current) — false-positive reduction (trained reasoning)
+- TRACE IS TEMPORAL: the model is now trained that a trace moves through time — current-state observation ("I am in the middle lane") vs the committed plan ("I will stay in the right-most lane") are DIFFERENT MOMENTS, not a contradiction. A real contradiction requires two claims about the SAME attribute at the SAME moment. Fixes the false M5 "middle vs right-most lane" flag.
+- PHANTOM-LEAD = strict (option b): only flagged when the TEXT contradicts itself about the same vehicle's lane (calls it a same-lane lead AND places it in an adjacent lane). A plain description of a car in an adjacent lane is no longer flagged.
+- CAMERA CHECKS ARE SEPARATE: anything camera-dependent (blue car in my lane? officer gesturing proceed?) appears ONLY in the camera-check list — never as a major/minor flag and never as a highlighted span. Keeps the flags list uncluttered.
+- GRAMMAR SPANS are now tight + atomic: one broken phrase per point (e.g. just "the the"), never a long span across an unrelated clause, never two grammar issues merged.
+- m16 fires ONLY for a decision-critical object visible only in a non-front camera — scenery mentioned in a direction ("accident on the left") no longer triggers it.
+
+## v3.2.0
 Re-read the canonical SOP and corrected real errors:
 - FLAG DISCIPLINE (the big fix): a Major/minor flag is only raised for things DEMONSTRABLE FROM TEXT (contradictions, trace↔plan mismatch, leftovers, hedging, grammar, structure, triage-intent mismatch). Anything that needs the camera to confirm (e.g. "is the officer gesturing proceed vs stop?") is NO LONGER mislabeled as a rubric violation — it becomes a short camera check. Fixes the "missed hazard" mislabel.
 - CAMERA LIST CORRECTED to the canonical set: SVC-F, SVC-FL, SVC-FR, SVC-SL, SVC-SR, SVC-RL, SVC-RR, SVC-R (previously had wrong SVC-L/R/B).
