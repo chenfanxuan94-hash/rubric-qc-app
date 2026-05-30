@@ -35,8 +35,13 @@ export default function Home() {
 
   const [full, setFull] = useState({ loading: false, res: null, err: null, raw: null, notices: [] });
   const [cam, setCam] = useState({ loading: false, res: null, err: null });
-  const [missing, setMissing] = useState(null); // list of labels, or null
-  const [tip, setTip] = useState(null); // {p, x, y}
+  const [missing, setMissing] = useState(null); // missing revised fields
+  const [ctxMissing, setCtxMissing] = useState(null); // missing required context
+  const [tip, setTip] = useState(null);
+  const [revisions, setRevisions] = useState([]); // [{trace, plan, verdict, majors, minors, at}]
+  const [prevFindings, setPrevFindings] = useState(null); // anchor for re-check
+  const [showHistory, setShowHistory] = useState(false);
+  const [unsavedModal, setUnsavedModal] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -56,6 +61,12 @@ export default function Home() {
 
   function onRunClick() {
     setSubmitErr(null);
+    const ctx = [];
+    if (!taskerName.trim()) ctx.push("your name");
+    if (!taskId.trim()) ctx.push("Task ID");
+    if (!triageNote.trim()) ctx.push("the triage note");
+    if (ctx.length) { setCtxMissing(ctx); setMissing(null); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    setCtxMissing(null);
     const miss = [];
     if (!revisedTrace.trim()) miss.push("revised thinking trace");
     if (!revisedPlan.trim()) miss.push("revised driving plan");
@@ -66,7 +77,19 @@ export default function Home() {
   async function doRun() {
     setMissing(null); setSubmitted(false);
     setFull({ loading: true, res: null, err: null, raw: null, notices: [] });
-    const d = await callApi("/api/check", base());
+    const d = await callApi("/api/check", { ...base(), priorFindings: prevFindings });
+    if (d.analysis) {
+      // capture this revision snapshot
+      const snap = {
+        trace: revisedTrace, plan: revisedPlan,
+        verdict: d.analysis.verdict,
+        majors: d.analysis.major_risks?.length || 0,
+        minors: d.analysis.minor_flags?.length || 0,
+        at: new Date().toISOString(),
+      };
+      setRevisions((r) => [...r, snap]);
+      setPrevFindings({ major_risks: d.analysis.major_risks || [], minor_flags: d.analysis.minor_flags || [] });
+    }
     setFull({ loading: false, res: d.analysis || null, err: d.error || null, raw: d.raw || null, notices: d.analysis ? noticesFor() : [] });
   }
 
@@ -76,13 +99,31 @@ export default function Home() {
     setCam({ loading: false, res: d.analysis || null, err: d.error || null });
   }
 
+  function scoreOf(res) {
+    if (!res) return null;
+    if ((res.major_risks?.length || 0) > 0) return 0;
+    return Math.max(0, 100 - 5 * (res.minor_flags?.length || 0));
+  }
+
   async function submit() {
     setSubmitErr(null);
     if (!taskId.trim()) { setSubmitErr("Task ID is required to submit."); return; }
     setSubmitting(true);
-    const d = await callApi("/api/submit", { ...base(), analysis: full.res, sectionResults: { camera: cam.res } }, 30000);
+    const d = await callApi("/api/submit", {
+      ...base(),
+      analysis: full.res,
+      sectionResults: { camera: cam.res },
+      revisions,
+      score: scoreOf(full.res),
+    }, 30000);
     setSubmitting(false);
-    if (d.error) setSubmitErr(d.error); else setSubmitted(true);
+    if (d.error) setSubmitErr(d.error); else { setSubmitted(true); setUnsavedModal(false); }
+  }
+
+  function newTaskClick() {
+    // compelling reminder: if there's an un-submitted result, push hard to submit
+    if (full.res && !submitted) { setUnsavedModal(true); return; }
+    resetForNext();
   }
 
   function resetForNext() {
@@ -90,7 +131,8 @@ export default function Home() {
     setPreseedTrace(""); setRevisedTrace(""); setPreseedPlan(""); setRevisedPlan("");
     setCameras([]); setTemporal(false);
     setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setCam({ loading: false, res: null, err: null });
-    setMissing(null); setSubmitted(false); setSubmitErr(null);
+    setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
+    setRevisions([]); setPrevFindings(null); setShowHistory(false); setUnsavedModal(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -101,12 +143,26 @@ export default function Home() {
   return (
     <>
       {tip && <TipCard tip={tip} />}
+      {unsavedModal && (
+        <div className="modal-overlay" onClick={() => setUnsavedModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-ico">⚠️</div>
+            <h3>This task isn't saved for review yet</h3>
+            <p>If you start a new task now, this work — including its full revision history — won't be recorded for the reviewer. Submitting takes one click and keeps everything.</p>
+            <div className="btns" style={{ marginTop: 16, justifyContent: "center" }}>
+              <button className="submit" onClick={submit} disabled={submitting}>{submitting ? <><span className="spinner" />Saving…</> : "Submit now →"}</button>
+              <button className="ghost" onClick={resetForNext}>Discard &amp; start new</button>
+            </div>
+            {submitErr && <div className="banner-err" style={{ marginTop: 12 }}>{submitErr}</div>}
+          </div>
+        </div>
+      )}
       <header className="app-header">
         <div className="wrap row">
           <div>
-            <div className="eyebrow">Caption Labeling · Pre-Submission QC</div>
+            <div className="eyebrow">For the Turing Waymo Team · Caption Labeling QC</div>
             <h1>Rubric QC Tool</h1>
-            <div className="sub">Paste your work, run one combined review, then submit. Powered by Opus 4.8.</div>
+            <div className="sub">Paste your work, run one combined review, fix &amp; re-check, then submit. Powered by Opus 4.8.</div>
           </div>
           <a className="adminlink" href="/admin">Reviewer view →</a>
         </div>
@@ -117,6 +173,10 @@ export default function Home() {
           <span className="ico">⚠️</span>
           <p><strong>The AI cannot see the camera footage.</strong> It reviews your text — consistency, trace↔plan agreement, writing, canonical compliance — and lists what needs the cameras. <strong>A clean result is not a guarantee the segment is correct.</strong></p>
         </div>
+
+        {ctxMissing && (
+          <div className="banner-err" style={{ marginBottom: 16 }}>Please fill in <b>{ctxMissing.join(", ")}</b> before running a check — the AI needs this context to review accurately.</div>
+        )}
 
         {/* PART 1 */}
         <div className="card">
@@ -175,10 +235,49 @@ export default function Home() {
 
           <div className="btns" style={{ marginTop: 16 }}>
             <button className="primary" onClick={onRunClick} disabled={full.loading}>
-              {full.loading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : "Run check"}
+              {full.loading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : (revisions.length > 0 ? "↻ Re-check (after edits)" : "Run check")}
             </button>
-            <button className="ghost" onClick={resetForNext}>New task</button>
+            <button className="ghost" onClick={newTaskClick}>New task</button>
           </div>
+
+          {revisions.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <span className="rev-pill">Revision {revisions.length}</span>
+              {revisions.length > 1 && (
+                <button className="linkbtn" onClick={() => setShowHistory(!showHistory)}>{showHistory ? "hide history ▴" : "view history ▸"}</button>
+              )}
+              {revisions.length > 1 && (
+                <span className="note" style={{ marginLeft: 8 }}>
+                  {revisions[0].majors}→{revisions[revisions.length - 1].majors} majors · {revisions[0].minors}→{revisions[revisions.length - 1].minors} minors
+                </span>
+              )}
+            </div>
+          )}
+          {showHistory && revisions.length > 1 && (
+            <div className="hist">
+              {revisions.map((rv, i) => (
+                <div className="hist-item" key={i}>
+                  <div className="hist-head">
+                    <b>Revision {i + 1}</b>
+                    <span className={"vb " + (rv.verdict || "ok")}>{(rv.verdict || "ok").replace("_", " ")}</span>
+                    <span className="note">{rv.majors} major · {rv.minors} minor</span>
+                    <span className="note" style={{ marginLeft: "auto" }}>{new Date(rv.at).toLocaleTimeString()}</span>
+                  </div>
+                  {i > 0 && (
+                    <details className="expander" style={{ marginTop: 6 }}>
+                      <summary><span className="chev">▸</span> What changed from Revision {i} → {i + 1}</summary>
+                      <div className="ebody">
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>TRACE</div>
+                        <TrackedBody before={revisions[i - 1].trace} after={rv.trace} />
+                        <div style={{ fontSize: 11, color: "var(--muted)", margin: "8px 0 4px", fontFamily: "var(--mono)" }}>PLAN</div>
+                        <TrackedBody before={revisions[i - 1].plan} after={rv.plan} />
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {missing && (
             <div className="reminder">
@@ -250,21 +349,15 @@ export default function Home() {
 }
 
 /* ================= rendering ================= */
-const PALETTE = [
-  { bg: "#E9D5FF", bd: "#7E22CE", tx: "#6B21A8" },
-  { bg: "#FECACA", bd: "#DC2626", tx: "#991B1B" },
-  { bg: "#FBCFE8", bd: "#DB2777", tx: "#9D174D" },
-  { bg: "#FED7AA", bd: "#EA580C", tx: "#9A3412" },
-  { bg: "#FEF08A", bd: "#CA8A04", tx: "#854D0E" },
-  { bg: "#BFDBFE", bd: "#2563EB", tx: "#1E40AF" },
-  { bg: "#99F6E4", bd: "#0D9488", tx: "#0F766E" },
-  { bg: "#BBF7D0", bd: "#16A34A", tx: "#15803D" },
-];
+const SEV_COLOR = {
+  major: { bg: "#FEE2E2", bd: "#DC2626", tx: "#991B1B" }, // red
+  minor: { bg: "#FEF3C7", bd: "#F59E0B", tx: "#92400E" }, // amber/beige
+};
 
 function assignPoints(a) {
   const majors = (a.major_risks || []).map((f) => ({ ...f, sev: "major" }));
   const minors = (a.minor_flags || []).map((f) => ({ ...f, sev: "minor" }));
-  return [...majors, ...minors].map((f, i) => ({ ...f, _point: i + 1, _color: PALETTE[i % PALETTE.length] }));
+  return [...majors, ...minors].map((f, i) => ({ ...f, _point: i + 1, _color: SEV_COLOR[f.sev] }));
 }
 
 function segmentize(text, points) {
@@ -364,6 +457,15 @@ function wordDiff(before, after) {
   return out;
 }
 
+function TrackedBody({ before, after }) {
+  const d = wordDiff(before, after);
+  return (
+    <div className="diff-body">
+      {d.map((w, i) => w.k === "=" ? <span key={i}>{w.t}</span> : w.k === "-" ? <span key={i} className="diff-del">{w.t}</span> : <span key={i} className="diff-add">{w.t}</span>)}
+    </div>
+  );
+}
+
 function TrackedDiff({ label, before, after }) {
   const [show, setShow] = useState(false);
   if (!after) return null;
@@ -371,14 +473,11 @@ function TrackedDiff({ label, before, after }) {
     <details className="expander"><summary><span className="chev">▸</span> {label}</summary>
       <div className="ebody" style={{ color: "var(--muted)", fontStyle: "italic", fontSize: 12.5 }}>No pre-seed provided, so there's nothing to compare against.</div></details>
   );
-  const d = show ? wordDiff(before, after) : null;
   return (
     <details className="expander" onToggle={(e) => setShow(e.target.open)}>
       <summary><span className="chev">▸</span> {label} <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>(tracked changes)</span></summary>
       <div className="ebody">
-        <div className="diff-body">
-          {d && d.map((w, i) => w.k === "=" ? <span key={i}>{w.t}</span> : w.k === "-" ? <span key={i} className="diff-del">{w.t}</span> : <span key={i} className="diff-add">{w.t}</span>)}
-        </div>
+        {show && <TrackedBody before={before} after={after} />}
         <div className="note" style={{ marginTop: 6 }}><span className="diff-del">red strike = removed from pre-seed</span> · <span className="diff-add">red underline = added in revision</span></div>
       </div>
     </details>

@@ -256,3 +256,26 @@ mark.hl:hover{filter:brightness(.94);}
 .diff-body{padding:11px 13px;font-size:12.5px;line-height:1.9;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;background:#fff;border-radius:6px;}
 .diff-del{background:#FEE2E2;color:#B91C1C;text-decoration:line-through;border-radius:2px;padding:0 1px;}
 .diff-add{background:#FEE2E2;color:#B91C1C;text-decoration:underline;border-radius:2px;padding:0 1px;font-weight:600;}
+
+/* ---- v3.1 modal + revision history ---- */
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:#fff;border-radius:14px;max-width:460px;width:100%;padding:26px 24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.modal-ico{font-size:34px;margin-bottom:6px;}
+.modal h3{font-size:18px;color:var(--ink);margin-bottom:8px;}
+.modal p{font-size:13.5px;color:var(--text);line-height:1.55;}
+.rev-pill{font-family:var(--mono);font-size:11px;font-weight:600;background:var(--teal);color:#fff;padding:3px 10px;border-radius:12px;}
+.linkbtn{background:none;border:none;color:var(--teal);font-size:12px;cursor:pointer;margin-left:10px;font-weight:600;text-decoration:underline;padding:0;}
+.hist{margin-top:10px;border:1px solid var(--rule);border-radius:9px;padding:10px;background:var(--bg);}
+.hist-item{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+.hist-item:last-child{margin-bottom:0;}
+.hist-head{display:flex;align-items:center;gap:10px;font-size:12.5px;}
+
+/* ---- v3.1 common mistakes ---- */
+.cm-list{border:1px solid var(--rule);border-radius:10px;background:#fff;padding:8px 12px;}
+.cm-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--rule);font-size:12.5px;}
+.cm-row:last-child{border-bottom:none;}
+.cm-code{font-family:var(--mono);font-weight:600;color:var(--ink);width:34px;flex-shrink:0;}
+.cm-bar{flex-shrink:0;width:110px;}
+.cm-bar i{display:block;height:8px;border-radius:4px;}
+.cm-n{font-family:var(--mono);font-weight:600;color:var(--muted);width:34px;flex-shrink:0;}
+.cm-ex{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

@@ -1,6 +1,19 @@
 # Rubric QC Tool — version log
 
-## v3.0.0  (current)
+## v3.1.0  (current)
+- TITLE: "For the Turing Waymo Team" on the header.
+- SEVERITY COLORS: Major is always RED, minor is always amber/beige (dropped the per-point rainbow). Points still numbered for matching.
+- REQUIRED CONTEXT: name, Task ID, and triage note are now compulsory before any check (context improves accuracy). The check blocks and tells you what's missing.
+- IN-APP RE-CHECK + STABILITY: after a check you can edit the text and hit "Re-check". Re-checks are ANCHORED — the model receives its prior findings and is told to mark each resolved/remaining and NOT invent new minor nitpicks unless your edit caused them or it's a high-confidence Major. Plus a confidence floor + deterministic ordering in the prompt. This dramatically reduces the "I fixed it and new random issues appeared" problem. (Note: LLMs can't be made bit-for-bit deterministic — Opus 4.8 doesn't allow temperature=0 — but anchoring removes the confusing part.)
+- REVISION CHAIN: every check snapshots the trace+plan. Default view shows the latest; "Revision N · view history" reveals a compact timeline with tracked-changes diffs BETWEEN consecutive revisions. The full chain is saved on submit.
+- COMPELLING SUBMIT REMINDER: clicking "New task" with unsaved results opens a modal — "this task isn't saved for review; its revision history will be lost" — with one-click Submit now, or Discard.
+- REVIEWER DASHBOARD upgrades (reviewer-only): Score column (Major=0%, else 100−5×minors) and a Revisions count in the table; a "Most common mistakes" panel aggregating rubric codes across all submissions; the per-tasker accuracy panel; richer CSV export (now includes score, revision count, full pre-seed/revised text, codes, headline — opens in Excel); and the full revision history shown in each submission's detail.
+
+### DB migration for v3.1.0 (run once in Supabase SQL editor)
+    alter table public.submissions add column if not exists revisions jsonb;
+    alter table public.submissions add column if not exists score int;
+
+## v3.0.0
 - ONE COMBINED CHECK (no more isolated trace/plan checks). Trace + plan are always reviewed together so the Trace↔Plan consistency check runs automatically.
 - MISSING-FIELD REMINDER: if a revised field is empty when you hit Run, a prompt asks "you don't have X — add it?" → Add, or Check anyway (results then note that consistency couldn't be checked).
 - PRE-SEED OPTIONAL: leave pre-seed blank and the diff/comparison simply notes "nothing to compare against"; the revised text is still fully reviewed for writing, internal consistency, canonical compliance, and triage alignment.

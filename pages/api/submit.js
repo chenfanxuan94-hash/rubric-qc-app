@@ -47,6 +47,8 @@ export default async function handler(req, res) {
     temporal: !!b.temporal,
     label_answers: b.labelAnswers || {},
     section_results: b.sectionResults || null,
+    revisions: b.revisions || null,
+    score: (typeof b.score === "number") ? b.score : null,
     ai_analysis: analysis,
     ai_verdict: analysis?.verdict || null,
     major_flags: majorFlags,

@@ -17,6 +17,8 @@ create table if not exists public.submissions (
   temporal      boolean default false,
   label_answers jsonb default '{}'::jsonb,
   section_results jsonb,
+  revisions     jsonb,
+  score         int,
   ai_analysis   jsonb,
   ai_verdict    text,
   major_flags   int default 0,

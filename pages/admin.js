@@ -46,19 +46,53 @@ export default function Admin() {
     })).sort((a, b) => b.major_v - a.major_v || b.major - a.major);
   }
 
+  function commonMistakes(rows) {
+    const codes = {};
+    for (const r of rows) {
+      const a = r.ai_analysis;
+      if (!a) continue;
+      [...(a.major_risks || []), ...(a.minor_flags || [])].forEach((f) => {
+        if (!f.code) return;
+        if (!codes[f.code]) codes[f.code] = { code: f.code, n: 0, sev: (f.code[0] === "M" ? "major" : "minor"), ex: f.fix || f.title || "" };
+        codes[f.code].n++;
+      });
+    }
+    return Object.values(codes).sort((a, b) => b.n - a.n);
+  }
+
+  function csvCell(v) {
+    if (v === null || v === undefined) v = "";
+    if (typeof v === "object") v = JSON.stringify(v);
+    v = String(v).replace(/"/g, '""');
+    return /[",\n]/.test(v) ? `"${v}"` : v;
+  }
+
   function exportCsv() {
     if (!rows.length) return;
-    const cols = ["created_at", "tasker_name", "task_id", "skipped", "ai_verdict", "major_flags", "minor_flags"];
-    const head = cols.join(",");
-    const body = rows.map((r) =>
-      cols.map((c) => {
-        let v = r[c];
-        if (v === null || v === undefined) v = "";
-        v = String(v).replace(/"/g, '""');
-        return /[",\n]/.test(v) ? `"${v}"` : v;
-      }).join(",")
-    ).join("\n");
-    const blob = new Blob([head + "\n" + body], { type: "text/csv" });
+    const cols = [
+      ["created_at", (r) => r.created_at],
+      ["tasker_name", (r) => r.tasker_name],
+      ["task_id", (r) => r.task_id],
+      ["skipped", (r) => r.skipped],
+      ["verdict", (r) => r.ai_verdict],
+      ["score", (r) => r.score],
+      ["majors", (r) => r.major_flags],
+      ["minors", (r) => r.minor_flags],
+      ["revisions", (r) => (r.revisions ? r.revisions.length : "")],
+      ["major_codes", (r) => (r.ai_analysis?.major_risks || []).map((f) => f.code).join(" ")],
+      ["minor_codes", (r) => (r.ai_analysis?.minor_flags || []).map((f) => f.code).join(" ")],
+      ["triage_note", (r) => r.triage_note],
+      ["preseed_trace", (r) => r.preseed_trace],
+      ["revised_trace", (r) => r.revised_trace],
+      ["preseed_plan", (r) => r.preseed_plan],
+      ["revised_plan", (r) => r.revised_plan],
+      ["cameras", (r) => (r.cameras || []).join(" ")],
+      ["temporal", (r) => r.temporal],
+      ["headline", (r) => r.ai_analysis?.headline],
+    ];
+    const head = cols.map((c) => c[0]).join(",");
+    const body = rows.map((r) => cols.map((c) => csvCell(c[1](r))).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + head + "\n" + body], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "rubric_qc_submissions.csv"; a.click();
@@ -126,10 +160,27 @@ export default function Admin() {
           </div>
         )}
 
+        {rows.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div className="block-head" style={{ marginBottom: 10 }}>▸ Most common mistakes (across all submissions)</div>
+            <div className="cm-list">
+              {commonMistakes(rows).map((c) => (
+                <div className="cm-row" key={c.code}>
+                  <span className={"pt-sev " + c.sev}>{c.sev}</span>
+                  <span className="cm-code">{c.code}</span>
+                  <span className="cm-bar"><i style={{ width: Math.min(100, c.n * 18) + "px", background: c.sev === "major" ? "var(--red)" : "var(--amber)" }} /></span>
+                  <span className="cm-n">{c.n}×</span>
+                  <span className="cm-ex">{c.ex}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="subs">
             <thead>
-              <tr><th>When</th><th>Tasker</th><th>Task ID</th><th>Skip</th><th>Verdict</th><th>Maj</th><th>Min</th></tr>
+              <tr><th>When</th><th>Tasker</th><th>Task ID</th><th>Skip</th><th>Verdict</th><th>Score</th><th>Rev</th><th>Maj</th><th>Min</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -139,6 +190,8 @@ export default function Admin() {
                   <td style={{ fontFamily: "var(--mono)" }}>{r.task_id}</td>
                   <td>{r.skipped ? "skip" : "label"}</td>
                   <td>{r.ai_verdict ? <span className={"vb " + r.ai_verdict}>{r.ai_verdict.replace("_", " ")}</span> : "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontWeight: 600, color: r.score === 0 ? "var(--red)" : r.score === 100 ? "var(--green)" : "var(--amber-text)" }}>{r.score === null || r.score === undefined ? "—" : r.score + "%"}</td>
+                  <td style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>{r.revisions ? r.revisions.length : "—"}</td>
                   <td style={{ color: r.major_flags ? "var(--red)" : "var(--muted)", fontWeight: 600 }}>{r.major_flags}</td>
                   <td style={{ color: "var(--amber-text)", fontWeight: 600 }}>{r.minor_flags}</td>
                 </tr>
@@ -153,11 +206,22 @@ export default function Admin() {
               <h2 style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--ink)" }}>Task {sel.task_id} · {sel.tasker_name || "—"}</h2>
               <button className="ghost" onClick={() => setSel(null)}>Close</button>
             </div>
+            <Field label="Score" v={sel.score === null || sel.score === undefined ? "—" : sel.score + "%"} />
             <Field label="Triage note" v={sel.triage_note} />
             <Field label="Skipped?" v={String(sel.skipped)} />
             <Field label="Skip answers" v={JSON.stringify(sel.skip_answers)} />
             <Field label="Cameras" v={(sel.cameras || []).join(", ")} />
             <Field label="Temporal" v={String(sel.temporal)} />
+            {sel.revisions && sel.revisions.length > 1 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 1, color: "var(--muted)", marginBottom: 5 }}>Revision history ({sel.revisions.length})</div>
+                {sel.revisions.map((rv, i) => (
+                  <div key={i} style={{ fontSize: 12, padding: "5px 0", borderBottom: "1px solid var(--rule)" }}>
+                    <b>Rev {i + 1}</b> · <span className={"vb " + (rv.verdict || "ok")}>{(rv.verdict || "ok").replace("_", " ")}</span> · {rv.majors} major · {rv.minors} minor <span style={{ color: "var(--muted)" }}>· {new Date(rv.at).toLocaleTimeString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <Two a={sel.preseed_trace} b={sel.revised_trace} la="Pre-seed trace" lb="Revised trace" />
             <Two a={sel.preseed_plan} b={sel.revised_plan} la="Pre-seed plan" lb="Revised plan" />
             <div style={{ marginTop: 14 }}>
