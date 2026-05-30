@@ -173,7 +173,7 @@ export default function Home() {
             </button>
           </div>
           {S.trace.err && <div className="banner-err" style={{ marginTop: 12 }}>{S.trace.err}</div>}
-          {S.trace.res && <SectionResult a={S.trace.res} kind="trace" />}
+          {S.trace.res && <SectionResult a={S.trace.res} kind="trace" traceText={revisedTrace} planText={revisedPlan} preTrace={preseedTrace} preMode />}
         </div>
 
         <div className="card">
@@ -190,7 +190,7 @@ export default function Home() {
             </button>
           </div>
           {S.plan.err && <div className="banner-err" style={{ marginTop: 12 }}>{S.plan.err}</div>}
-          {S.plan.res && <SectionResult a={S.plan.res} kind="plan" />}
+          {S.plan.res && <SectionResult a={S.plan.res} kind="plan" traceText={revisedTrace} planText={revisedPlan} prePlan={preseedPlan} preMode />}
         </div>
 
         <div className="card">
@@ -228,7 +228,7 @@ export default function Home() {
           {S.full.raw && <pre className="json" style={{ marginTop: 12 }}>{S.full.raw}</pre>}
         </div>
 
-        {S.full.res && <FullResult a={S.full.res} />}
+        {S.full.res && <FullResult a={S.full.res} traceText={revisedTrace} planText={revisedPlan} preTrace={preseedTrace} prePlan={preseedPlan} />}
 
         <div className="card" style={{ borderColor: "var(--ink)" }}>
           <h2 style={{ color: "var(--ink)" }}>Submit for review</h2>
@@ -254,74 +254,226 @@ export default function Home() {
   );
 }
 
-function SectionResult({ a, kind }) {
-  const wi = a.writing_issues || {};
-  const writingCount = (wi.hedging_words?.length || 0) + (wi.leftover_meta_narration?.length || 0) + (wi.redundancy?.length || 0) + (wi.other?.length || 0);
+/* ================= v2.2 result rendering ================= */
+
+// distinct highlight palette; majors get the warm/purple end first
+const PALETTE = [
+  { bg: "#E9D5FF", bd: "#7E22CE", tx: "#6B21A8" }, // purple
+  { bg: "#FECACA", bd: "#DC2626", tx: "#991B1B" }, // red
+  { bg: "#FBCFE8", bd: "#DB2777", tx: "#9D174D" }, // pink
+  { bg: "#FED7AA", bd: "#EA580C", tx: "#9A3412" }, // orange
+  { bg: "#FEF08A", bd: "#CA8A04", tx: "#854D0E" }, // yellow
+  { bg: "#BFDBFE", bd: "#2563EB", tx: "#1E40AF" }, // blue
+  { bg: "#99F6E4", bd: "#0D9488", tx: "#0F766E" }, // teal
+  { bg: "#BBF7D0", bd: "#16A34A", tx: "#15803D" }, // green
+];
+
+// Build numbered points: majors first, then minors. Each gets _point + _color.
+function assignPoints(a) {
+  const majors = (a.major_risks || []).map((f) => ({ ...f, sev: "major" }));
+  const minors = (a.minor_flags || []).map((f) => ({ ...f, sev: "minor" }));
+  const all = [...majors, ...minors];
+  return all.map((f, i) => ({ ...f, _point: i + 1, _color: PALETTE[i % PALETTE.length] }));
+}
+
+// find spans in text -> highlighted segments (whitespace-tolerant, overlap-safe)
+function segmentize(text, points) {
+  if (!text) return [{ text: "" }];
+  const marks = [];
+  points.forEach((p) => {
+    (p.spans || []).forEach((span) => {
+      if (!span || span.trim().length < 4) return;
+      let start = text.indexOf(span);
+      let len = span.length;
+      if (start === -1) {
+        try {
+          const pat = span.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+          const m = new RegExp(pat).exec(text);
+          if (m) { start = m.index; len = m[0].length; }
+        } catch {}
+      }
+      if (start >= 0) marks.push({ start, end: start + len, p });
+    });
+  });
+  marks.sort((a, b) => a.start - b.start || b.end - a.end);
+  const clean = [];
+  let lastEnd = -1;
+  for (const m of marks) { if (m.start >= lastEnd) { clean.push(m); lastEnd = m.end; } }
+  const segs = [];
+  let cur = 0;
+  for (const m of clean) {
+    if (m.start > cur) segs.push({ text: text.slice(cur, m.start) });
+    segs.push({ text: text.slice(m.start, m.end), mark: m });
+    cur = m.end;
+  }
+  if (cur < text.length) segs.push({ text: text.slice(cur) });
+  return segs;
+}
+
+function HighlightedText({ label, text, points }) {
+  if (!text) return null;
+  const segs = segmentize(text, points);
+  const anyMark = segs.some((s) => s.mark);
   return (
-    <div style={{ marginTop: 14 }}>
-      <div className={"verdict " + (a.verdict || "ok")} style={{ padding: "12px 14px", marginBottom: 12 }}>
-        <div className="vtag">{a.verdict === "major_risk" ? "⚑ Major risk" : a.verdict === "minor_issues" ? "Minor issues" : "Clean (text-level)"}</div>
-        <h3 style={{ fontSize: 14, margin: "5px 0 0" }}>{a.headline || ""}</h3>
+    <div className="hl-panel">
+      <div className="hl-head">{label}{!anyMark ? " — no highlightable spans (see list below)" : ""}</div>
+      <div className="hl-body">
+        {segs.map((s, i) => s.mark
+          ? <mark key={i} className="hl" style={{ background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd }}
+              title={`#${s.mark.p._point} · ${s.mark.p.code} · ${s.mark.p.fix || ""}`}>
+              {s.text}<sup style={{ color: s.mark.p._color.tx }}>#{s.mark.p._point}</sup>
+            </mark>
+          : <span key={i}>{s.text}</span>
+        )}
       </div>
-      {kind === "plan" && a.trace_plan_consistency && (
-        <div className={"flag " + (a.trace_plan_consistency.consistent ? "minor" : "major")}>
-          <div className="ftop"><span className="ftitle">Trace ↔ Plan consistency (M3)</span></div>
-          <div className="frow"><b>{a.trace_plan_consistency.consistent ? "Consistent" : "Mismatch"}:</b> {a.trace_plan_consistency.detail}</div>
-          <div className="frow"><b>Action is one of the trace's options:</b> {String(a.trace_plan_consistency.action_in_trace_options)}</div>
-        </div>
-      )}
-      {kind === "plan" && a.structure && (
-        <div className="flag minor" style={{ borderLeftColor: "var(--teal)" }}>
-          <div className="pill-list">
-            {["goal", "observation", "reasoning", "action", "safety"].map((k) => (
-              <span className={"pill" + (a.structure[k] ? "" : " warn")} key={k}>{k}: {a.structure[k] ? "✓" : (k === "safety" ? "—" : "missing")}</span>
-            ))}
-          </div>
-          {a.structure.note && <div className="frow" style={{ marginTop: 6 }}>{a.structure.note}</div>}
-        </div>
-      )}
-      {a.major_risks?.length > 0 && a.major_risks.map((m, i) => (
-        <div className="flag major" key={i}>
-          <div className="ftop"><span className="code major">{m.code}</span><span className="ftitle">{m.title}</span></div>
-          <div className="frow"><b>What:</b> {m.what}</div>
-          <div className="frow"><b>Why:</b> {m.why}</div>
-          {m.evidence && m.evidence !== "—" && <div className="frow"><b>Evidence:</b> <span className="ev">{m.evidence}</span></div>}
-          {m.confirm && <div className="confirm">📷 Confirm on camera: {m.confirm}</div>}
-        </div>
-      ))}
-      {a.minor_flags?.length > 0 && a.minor_flags.map((m, i) => (
-        <div className="flag minor" key={i}>
-          <div className="ftop"><span className="code minor">{m.code}</span><span className="ftitle">{m.title}</span></div>
-          <div className="frow">{m.detail}</div>
-          {m.evidence && m.evidence !== "—" && <div className="frow"><b>Evidence:</b> <span className="ev">{m.evidence}</span></div>}
-          {m.fix && <div className="frow"><b>Fix:</b> {m.fix}</div>}
-        </div>
-      ))}
-      {a.suspicious_unchanged?.length > 0 && (
-        <div className="flag major"><div className="frow"><b style={{ color: "var(--red)" }}>Risky things left unchanged:</b>
-          <ul style={{ margin: "4px 0 0 18px", fontSize: 12.5, color: "var(--red)" }}>{a.suspicious_unchanged.map((c, i) => <li key={i}>{c}</li>)}</ul></div></div>
-      )}
-      {writingCount > 0 && (
-        <div className="flag minor">
-          <div className="ftop"><span className="ftitle">Writing</span></div>
-          {wi.hedging_words?.length > 0 && <div className="frow"><b>Hedging:</b> <span className="pill-list" style={{ display: "inline-flex", marginLeft: 4 }}>{wi.hedging_words.map((w, i) => <span className="pill warn" key={i}>{w}</span>)}</span></div>}
-          {wi.leftover_meta_narration?.length > 0 && <div className="frow"><b>Meta-narration left in:</b> {wi.leftover_meta_narration.map((w, i) => <span className="ev" key={i} style={{ marginRight: 4 }}>{w}</span>)}</div>}
-          {wi.redundancy?.length > 0 && <div className="frow"><b>Redundancy:</b> {wi.redundancy.join("; ")}</div>}
-          {wi.other?.length > 0 && <div className="frow"><b>Other:</b> {wi.other.join("; ")}</div>}
-        </div>
-      )}
-      {a.self_review?.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          <div className="block-head" style={{ fontSize: 11 }}>Confirm on camera</div>
-          {a.self_review.map((q, i) => (
-            <label className="review-item" key={i}><input type="checkbox" /><span><span className="qc">{q.code} · </span><span className="qt">{q.question}</span></span></label>
-          ))}
+    </div>
+  );
+}
+
+function PointRow({ p }) {
+  const [open, setOpen] = useState(false);
+  const has = p.why || p.what || p.evidence || p.confirm || p.detail || p.title;
+  return (
+    <div className="pt-row">
+      <div className="pt-line" onClick={() => has && setOpen(!open)}>
+        <span className="pt-num" style={{ background: p._color.bd }}>{p._point}</span>
+        <span className={"pt-sev " + p.sev}>{p.sev === "major" ? "major" : "minor"}</span>
+        <span className="pt-code">{p.code}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span>
+        <span className="pt-fix">{p.fix || p.title || p.detail}</span>
+        {has && <span className="pt-q">{open ? "−" : "?"}</span>}
+      </div>
+      {open && has && (
+        <div className="pt-detail">
+          {p.title && p.title !== p.fix && <div className="dr"><b>{p.title}</b></div>}
+          {p.what && <div className="dr"><b>What:</b> {p.what}</div>}
+          {p.why && <div className="dr"><b>Why:</b> {p.why}</div>}
+          {p.detail && !p.why && <div className="dr">{p.detail}</div>}
+          {p.evidence && p.evidence !== "—" && <div className="dr"><b>Evidence:</b> <span className="ev">{p.evidence}</span></div>}
+          {p.confirm && <div className="cam">📷 Confirm on camera: {p.confirm}</div>}
         </div>
       )}
     </div>
   );
 }
 
+function PointList({ points }) {
+  if (!points.length) return null;
+  return (
+    <div className="pt-list">
+      {points.map((p, i) => <PointRow key={i} p={p} />)}
+    </div>
+  );
+}
+
+/* ---- word-level diff (LCS) ---- */
+function wordDiff(before, after) {
+  const A = (before || "").split(/(\s+)/);
+  const B = (after || "").split(/(\s+)/);
+  const n = A.length, m = B.length;
+  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push({ t: A[i], k: "=" }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: A[i], k: "-" }); i++; }
+    else { out.push({ t: B[j], k: "+" }); j++; }
+  }
+  while (i < n) { out.push({ t: A[i], k: "-" }); i++; }
+  while (j < m) { out.push({ t: B[j], k: "+" }); j++; }
+  return out;
+}
+
+function DiffView({ before, after }) {
+  const [show, setShow] = useState(false);
+  if (!before && !after) return null;
+  const d = show ? wordDiff(before, after) : null;
+  return (
+    <details className="expander" onToggle={(e) => setShow(e.target.open)}>
+      <summary><span className="chev">▸</span> Diff view (pre-seed → revised)</summary>
+      <div className="ebody">
+        <div className="diff-body" style={{ maxHeight: 420 }}>
+          {d ? d.map((w, i) =>
+            w.k === "=" ? <span key={i}>{w.t}</span>
+            : w.k === "-" ? <span key={i} className="diff-del">{w.t}</span>
+            : <span key={i} className="diff-add">{w.t}</span>
+          ) : null}
+        </div>
+        <div className="note" style={{ marginTop: 6 }}><span className="diff-del">red = removed</span> · <span className="diff-add">green = added</span></div>
+      </div>
+    </details>
+  );
+}
+
+function CompactVerdict({ a, points }) {
+  const maj = (a.major_risks?.length) || 0;
+  const min = (a.minor_flags?.length) || 0;
+  const cam = (a.self_review?.length || a.self_review_checklist?.length || 0);
+  const v = a.verdict || "ok";
+  return (
+    <div className={"compact-verdict " + v}>
+      <span className="vt">{v === "major_risk" ? "⚑ Fix before submit" : v === "minor_issues" ? "Minor cleanup" : "✓ Clean (text-level)"}</span>
+      {(maj > 0 || min > 0 || cam > 0) && (
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{maj} major · {min} minor · {cam} to verify</span>
+      )}
+      {a.headline && <span className="vh">— {a.headline}</span>}
+    </div>
+  );
+}
+
+function SelfReviewBlock({ items }) {
+  if (!items || !items.length) return null;
+  return (
+    <details className="expander">
+      <summary><span className="chev">▸</span> 📷 Verify on camera ({items.length}) — AI can't see these</summary>
+      <div className="ebody">
+        {items.map((q, i) => (
+          <label className="review-item" key={i}><input type="checkbox" /><span><span className="qc">{q.code} · </span><span className="qt">{q.question}</span></span></label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/* ---------- section result (trace / plan) ---------- */
+function SectionResult({ a, kind, traceText, planText, preTrace, prePlan }) {
+  const points = assignPoints(a);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <CompactVerdict a={a} points={points} />
+
+      {kind === "plan" && a.trace_plan_consistency && !a.trace_plan_consistency.consistent && (
+        <div className="banner-err" style={{ marginBottom: 8 }}>⚑ Trace↔Plan mismatch (M3): {a.trace_plan_consistency.detail}</div>
+      )}
+
+      {/* highlighted text */}
+      {kind === "trace"
+        ? <HighlightedText label="Your revised trace — flagged spans" text={traceText} points={points} />
+        : <HighlightedText label="Your revised plan — flagged spans" text={planText} points={points} />}
+
+      {/* numbered points */}
+      <PointList points={points} />
+
+      {kind === "plan" && a.structure && (
+        <details className="expander">
+          <summary><span className="chev">▸</span> Plan structure</summary>
+          <div className="ebody"><div className="pill-list">
+            {["goal", "observation", "reasoning", "action", "safety"].map((k) => (
+              <span className={"pill" + (a.structure[k] ? "" : " warn")} key={k}>{k}: {a.structure[k] ? "✓" : (k === "safety" ? "—" : "missing")}</span>
+            ))}
+          </div></div>
+        </details>
+      )}
+
+      <SelfReviewBlock items={a.self_review} />
+      <DiffView before={kind === "trace" ? preTrace : prePlan} after={kind === "trace" ? traceText : planText} />
+    </div>
+  );
+}
+
+/* ---------- camera advisor ---------- */
 function CameraResult({ a }) {
   return (
     <div style={{ marginTop: 14 }}>
@@ -329,105 +481,78 @@ function CameraResult({ a }) {
         <div className="g-row" style={{ fontSize: 13, marginBottom: 8 }}><b>{a.summary}</b></div>
         <div className="g-row"><b>Cameras the text implies:</b> {a.cameras_text_implies?.length ? a.cameras_text_implies.join(", ") : "—"}</div>
         {a.camera_reasoning?.length > 0 && (
-          <ul style={{ margin: "4px 0 8px 18px", fontSize: 12 }}>
-            {a.camera_reasoning.map((c, i) => <li key={i}><b>{c.camera}</b> — {c.because}</li>)}
-          </ul>
+          <details className="expander" style={{ marginTop: 6, marginBottom: 6 }}>
+            <summary><span className="chev">▸</span> Why these cameras</summary>
+            <div className="ebody"><ul style={{ margin: "0 0 0 18px", fontSize: 12 }}>
+              {a.camera_reasoning.map((c, i) => <li key={i}><b>{c.camera}</b> — {c.because}</li>)}
+            </ul></div>
+          </details>
         )}
-        <div className="g-row"><b>Temporal needed?</b> <span style={{ textTransform: "uppercase", fontFamily: "var(--mono)", fontSize: 11, color: a.temporal_needed === "yes" ? "var(--red)" : a.temporal_needed === "maybe" ? "var(--amber-text)" : "var(--green)" }}>{a.temporal_needed}</span> — {a.temporal_reason}</div>
-        {a.missing_from_selection?.length > 0 && (
-          <div className="g-row" style={{ color: "var(--red)" }}><b>⚠ You didn't select (but text implies):</b> {a.missing_from_selection.join(", ")}</div>
-        )}
-        {a.extra_in_selection?.length > 0 && (
-          <div className="g-row" style={{ color: "var(--amber-text)" }}><b>Selected but unused in text:</b> {a.extra_in_selection.join(", ")}</div>
-        )}
-        {a.temporal_mismatch && a.temporal_mismatch !== "none" && (
-          <div className="g-row" style={{ color: "var(--red)" }}><b>Temporal:</b> {a.temporal_mismatch === "should_add" ? "you should ADD Temporal" : "you should REMOVE Temporal"}</div>
-        )}
+        <div className="g-row"><b>Temporal?</b> <span style={{ textTransform: "uppercase", fontFamily: "var(--mono)", fontSize: 11, color: a.temporal_needed === "yes" ? "var(--red)" : a.temporal_needed === "maybe" ? "var(--amber-text)" : "var(--green)" }}>{a.temporal_needed}</span> — {a.temporal_reason}</div>
+        {a.missing_from_selection?.length > 0 && (<div className="g-row" style={{ color: "var(--red)" }}><b>⚠ Not selected (text implies):</b> {a.missing_from_selection.join(", ")}</div>)}
+        {a.extra_in_selection?.length > 0 && (<div className="g-row" style={{ color: "var(--amber-text)" }}><b>Selected but unused:</b> {a.extra_in_selection.join(", ")}</div>)}
+        {a.temporal_mismatch && a.temporal_mismatch !== "none" && (<div className="g-row" style={{ color: "var(--red)" }}><b>Temporal:</b> {a.temporal_mismatch === "should_add" ? "ADD Temporal" : "REMOVE Temporal"}</div>)}
       </div>
     </div>
   );
 }
 
-function FullResult({ a }) {
-  const wi = a.writing_issues || {};
-  const writingCount = (wi.hedging_words?.length || 0) + (wi.leftover_meta_narration?.length || 0) + (wi.redundancy?.length || 0) + (wi.other?.length || 0);
+/* ---------- full result ---------- */
+function FullResult({ a, traceText, planText, preTrace, prePlan }) {
+  const points = assignPoints(a);
+  // split points back by which text they hit, for two panels
   return (
     <div style={{ marginBottom: 20 }}>
-      <div className={"verdict " + (a.verdict || "ok")}>
-        <div className="vtag">{a.verdict === "major_risk" ? "⚑ Major risk — verify before submitting" : a.verdict === "minor_issues" ? "Minor issues to clean up" : "Looks clean (text-level)"}</div>
-        <h3>{a.headline || ""}</h3><p>{a.summary || ""}</p>
-      </div>
-      <div className="stat-row">
-        <div className="stat red"><div className="num">{a.major_risks?.length || 0}</div><div className="lbl">Major risks</div></div>
-        <div className="stat amber"><div className="num">{a.minor_flags?.length || 0}</div><div className="lbl">Minor flags</div></div>
-        <div className="stat amber"><div className="num">{writingCount}</div><div className="lbl">Writing issues</div></div>
-        <div className="stat teal"><div className="num">{a.self_review_checklist?.length || 0}</div><div className="lbl">To confirm on camera</div></div>
-      </div>
-      {a.skip_check && (
-        <div className="block"><div className="block-head">▸ Skip decision</div>
-          <div className={"flag " + (a.skip_check.decision_coherent ? "minor" : "major")}><div className="frow"><b>{a.skip_check.decision_coherent ? "Coherent" : "Possible inconsistency"}:</b> {a.skip_check.note}</div></div></div>
+      <CompactVerdict a={{ ...a, self_review: a.self_review_checklist }} points={points} />
+      {a.summary && <p className="note" style={{ marginBottom: 12 }}>{a.summary}</p>}
+
+      {a.skip_check && !a.skip_check.decision_coherent && (
+        <div className="banner-err" style={{ marginBottom: 8 }}>⚑ Skip decision may be inconsistent: {a.skip_check.note}</div>
       )}
-      {a.major_risks?.length > 0 && (
-        <div className="block"><div className="block-head" style={{ color: "var(--red)" }}>▸ Major risks (each could be 0%)</div>
-          {a.major_risks.map((m, i) => (
-            <div className="flag major" key={i}>
-              <div className="ftop"><span className="code major">{m.code}</span><span className="ftitle">{m.title}</span></div>
-              <div className="frow"><b>What:</b> {m.what}</div><div className="frow"><b>Why:</b> {m.why}</div>
-              {m.evidence && m.evidence !== "—" && <div className="frow"><b>Evidence:</b> <span className="ev">{m.evidence}</span></div>}
-              {m.confirm && <div className="confirm">📷 Confirm on camera: {m.confirm}</div>}
-            </div>))}
-        </div>
+      {a.trace_plan_consistency && !a.trace_plan_consistency.consistent && (
+        <div className="banner-err" style={{ marginBottom: 8 }}>⚑ Trace↔Plan mismatch (M3): {a.trace_plan_consistency.detail}</div>
       )}
-      {a.trace_plan_consistency && (
-        <div className="block"><div className="block-head">▸ Trace ↔ Plan (M3)</div>
-          <div className={"flag " + (a.trace_plan_consistency.consistent ? "minor" : "major")}>
-            <div className="frow"><b>{a.trace_plan_consistency.consistent ? "Consistent" : "Mismatch"}:</b> {a.trace_plan_consistency.detail}</div>
-            <div className="frow"><b>Action in trace options:</b> {String(a.trace_plan_consistency.action_in_trace_options)}</div></div></div>
+
+      {/* highlighted panels — points may reference either text; show both */}
+      <HighlightedText label="Revised trace — flagged spans" text={traceText} points={points} />
+      <HighlightedText label="Revised plan — flagged spans" text={planText} points={points} />
+
+      {/* numbered points */}
+      <PointList points={points} />
+
+      {a.diff_analysis && (a.diff_analysis.suspicious_unchanged?.length > 0 || a.diff_analysis.new_problems_introduced?.length > 0 || a.diff_analysis.key_changes?.length > 0) && (
+        <details className="expander">
+          <summary><span className="chev">▸</span> What changed vs. pre-seed (AI summary)</summary>
+          <div className="ebody" style={{ fontSize: 12.5 }}>
+            {a.diff_analysis.key_changes?.length > 0 && (<><b>Changes:</b><ul style={{ margin: "4px 0 8px 18px" }}>{a.diff_analysis.key_changes.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
+            {a.diff_analysis.suspicious_unchanged?.length > 0 && (<><b style={{ color: "var(--red)" }}>Risky unchanged:</b><ul style={{ margin: "4px 0 8px 18px", color: "var(--red)" }}>{a.diff_analysis.suspicious_unchanged.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
+            {a.diff_analysis.new_problems_introduced?.length > 0 && (<><b style={{ color: "var(--red)" }}>New problems:</b><ul style={{ margin: "4px 0 0 18px", color: "var(--red)" }}>{a.diff_analysis.new_problems_introduced.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
+          </div>
+        </details>
       )}
-      {a.minor_flags?.length > 0 && (
-        <div className="block"><div className="block-head" style={{ color: "var(--amber-text)" }}>▸ Minor flags (−5% each)</div>
-          {a.minor_flags.map((m, i) => (
-            <div className="flag minor" key={i}>
-              <div className="ftop"><span className="code minor">{m.code}</span><span className="ftitle">{m.title}</span></div>
-              <div className="frow">{m.detail}</div>
-              {m.evidence && m.evidence !== "—" && <div className="frow"><b>Evidence:</b> <span className="ev">{m.evidence}</span></div>}
-              {m.fix && <div className="frow"><b>Fix:</b> {m.fix}</div>}
-            </div>))}
-        </div>
-      )}
-      {a.diff_analysis && (
-        <div className="block"><div className="block-head">▸ What you changed</div>
-          <div className="flag minor" style={{ borderLeftColor: "var(--teal)" }}>
-            {a.diff_analysis.key_changes?.length > 0 && <><div className="frow"><b>Key changes:</b></div><ul style={{ margin: "4px 0 8px 18px", fontSize: 12.5 }}>{a.diff_analysis.key_changes.map((c, i) => <li key={i}>{c}</li>)}</ul></>}
-            {a.diff_analysis.suspicious_unchanged?.length > 0 && <><div className="frow"><b style={{ color: "var(--red)" }}>Suspicious unchanged:</b></div><ul style={{ margin: "4px 0 8px 18px", fontSize: 12.5, color: "var(--red)" }}>{a.diff_analysis.suspicious_unchanged.map((c, i) => <li key={i}>{c}</li>)}</ul></>}
-            {a.diff_analysis.new_problems_introduced?.length > 0 && <><div className="frow"><b style={{ color: "var(--red)" }}>New problems added:</b></div><ul style={{ margin: "4px 0 0 18px", fontSize: 12.5, color: "var(--red)" }}>{a.diff_analysis.new_problems_introduced.map((c, i) => <li key={i}>{c}</li>)}</ul></>}
-          </div></div>
-      )}
-      {writingCount > 0 && (
-        <div className="block"><div className="block-head" style={{ color: "var(--amber-text)" }}>▸ Writing issues (revised text)</div>
-          <div className="flag minor">
-            {wi.hedging_words?.length > 0 && <div className="frow"><b>Hedging:</b> <span className="pill-list" style={{ display: "inline-flex", marginLeft: 4 }}>{wi.hedging_words.map((w, i) => <span className="pill warn" key={i}>{w}</span>)}</span></div>}
-            {wi.leftover_meta_narration?.length > 0 && <div className="frow" style={{ marginTop: 6 }}><b>Meta-narration:</b> {wi.leftover_meta_narration.map((w, i) => <span className="ev" key={i} style={{ marginRight: 4 }}>{w}</span>)}</div>}
-            {wi.redundancy?.length > 0 && <div className="frow" style={{ marginTop: 6 }}><b>Redundancy:</b> {wi.redundancy.join("; ")}</div>}
-            {wi.other?.length > 0 && <div className="frow" style={{ marginTop: 6 }}><b>Other:</b> {wi.other.join("; ")}</div>}
-          </div></div>
-      )}
-      {a.self_review_checklist?.length > 0 && (
-        <div className="block"><div className="block-head">▸ Confirm on the cameras</div>
-          {a.self_review_checklist.map((q, i) => (<label className="review-item" key={i}><input type="checkbox" /><span><span className="qc">{q.code} · </span><span className="qt">{q.question}</span></span></label>))}</div>
-      )}
+
+      <DiffView before={preTrace} after={traceText} />
+      <DiffView before={prePlan} after={planText} />
+
+      <SelfReviewBlock items={a.self_review_checklist} />
+
       {a.label_guidance && (
-        <div className="block"><div className="block-head" style={{ color: "var(--teal)" }}>▸ Label guidance</div>
-          <div className="guidance">
+        <details className="expander">
+          <summary><span className="chev">▸</span> Label guidance (cameras / Temporal)</summary>
+          <div className="ebody" style={{ fontSize: 12.5 }}>
             <div className="g-row"><b>Cameras text implies:</b> {a.label_guidance.cameras_text_implies?.length ? a.label_guidance.cameras_text_implies.join(", ") : "—"}</div>
-            <div className="g-row"><b>Temporal needed?</b> {a.label_guidance.temporal_needed} — {a.label_guidance.temporal_reason}</div>
-            <div className="g-row"><b>Selection check:</b> {a.label_guidance.camera_selection_note}</div>
-          </div></div>
+            <div className="g-row"><b>Temporal?</b> {a.label_guidance.temporal_needed} — {a.label_guidance.temporal_reason}</div>
+            <div className="g-row"><b>Selection:</b> {a.label_guidance.camera_selection_note}</div>
+          </div>
+        </details>
       )}
+
       {a.rubric_sweep?.length > 0 && (
-        <div className="block"><div className="block-head">▸ Full rubric sweep (all 17)</div>
-          <div className="sweep">{a.rubric_sweep.map((r, i) => (
+        <details className="expander">
+          <summary><span className="chev">▸</span> Full rubric sweep (all 17)</summary>
+          <div className="ebody"><div className="sweep">{a.rubric_sweep.map((r, i) => (
             <div className="sweep-item" key={i} title={r.note}><span className={"dot " + (r.status || "na").replace("/", "")} /><span className="sc">{r.code}</span><span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span></div>))}</div></div>
+        </details>
       )}
     </div>
   );

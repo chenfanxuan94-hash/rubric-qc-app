@@ -20,6 +20,32 @@ export default function Admin() {
     finally { setLoading(false); }
   }
 
+  function computeTaskerStats(rows) {
+    const map = {};
+    for (const r of rows) {
+      const name = (r.tasker_name && r.tasker_name.trim()) || "(no name)";
+      if (!map[name]) map[name] = { name, n: 0, major: 0, minor: 0, ok: 0, minor_v: 0, major_v: 0, codes: {} };
+      const t = map[name];
+      t.n++;
+      t.major += r.major_flags || 0;
+      t.minor += r.minor_flags || 0;
+      if (r.ai_verdict === "ok") t.ok++;
+      else if (r.ai_verdict === "minor_issues") t.minor_v++;
+      else if (r.ai_verdict === "major_risk") t.major_v++;
+      const a = r.ai_analysis;
+      if (a) {
+        (a.major_risks || []).forEach((f) => { if (f.code) t.codes[f.code] = (t.codes[f.code] || 0) + 1; });
+        (a.minor_flags || []).forEach((f) => { if (f.code) t.codes[f.code] = (t.codes[f.code] || 0) + 1; });
+      }
+    }
+    return Object.values(map).map((t) => ({
+      ...t,
+      avgMajor: t.n ? (t.major / t.n) : 0,
+      avgMinor: t.n ? (t.minor / t.n) : 0,
+      topCodes: Object.entries(t.codes).sort((a, b) => b[1] - a[1]).slice(0, 5),
+    })).sort((a, b) => b.major_v - a.major_v || b.major - a.major);
+  }
+
   function exportCsv() {
     if (!rows.length) return;
     const cols = ["created_at", "tasker_name", "task_id", "skipped", "ai_verdict", "major_flags", "minor_flags"];
@@ -71,6 +97,35 @@ export default function Admin() {
       </header>
       <div className="wrap" style={{ marginTop: 20 }}>
         {error && <div className="banner-err">{error}</div>}
+
+        {rows.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div className="block-head" style={{ marginBottom: 10 }}>▸ Per-tasker accuracy (reviewer only)</div>
+            <div className="tk-grid">
+              {computeTaskerStats(rows).map((t) => {
+                const total = t.ok + t.minor_v + t.major_v || 1;
+                return (
+                  <div className="tk-card" key={t.name}>
+                    <div className="tk-name">{t.name}</div>
+                    <div className="tk-stat"><span>Tasks</span><span className="v">{t.n}</span></div>
+                    <div className="tk-stat"><span>Avg majors / task</span><span className="v" style={{ color: t.avgMajor > 0 ? "var(--red)" : "var(--green)" }}>{t.avgMajor.toFixed(2)}</span></div>
+                    <div className="tk-stat"><span>Avg minors / task</span><span className="v" style={{ color: "var(--amber-text)" }}>{t.avgMinor.toFixed(2)}</span></div>
+                    <div className="tk-stat"><span>Major-risk tasks</span><span className="v" style={{ color: "var(--red)" }}>{t.major_v}</span></div>
+                    <div className="tk-bar" title={`${t.ok} clean · ${t.minor_v} minor · ${t.major_v} major`}>
+                      <i style={{ width: (100 * t.ok / total) + "%", background: "var(--green)" }} />
+                      <i style={{ width: (100 * t.minor_v / total) + "%", background: "var(--amber)" }} />
+                      <i style={{ width: (100 * t.major_v / total) + "%", background: "var(--red)" }} />
+                    </div>
+                    {t.topCodes.length > 0 && (
+                      <div className="tk-codes">Most-flagged: {t.topCodes.map(([c, n]) => <span className="cd" key={c}>{c}×{n}</span>)}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="subs">
             <thead>
