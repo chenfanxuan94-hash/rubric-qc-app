@@ -236,3 +236,23 @@ textarea{min-height:200px;line-height:1.6;white-space:pre-wrap;overflow-wrap:bre
 .tk-bar i{display:block;height:100%;}
 .tk-codes{margin-top:8px;font-size:11px;color:var(--muted);}
 .tk-codes .cd{font-family:var(--mono);background:var(--bg);border:1px solid var(--rule);border-radius:4px;padding:1px 5px;margin:0 3px 3px 0;display:inline-block;}
+
+/* ---- v3.0 hover tooltip card ---- */
+.tipcard{position:fixed;z-index:1000;background:#fff;border:1px solid;border-left-width:4px;border-radius:9px;box-shadow:0 10px 30px rgba(15,23,42,.18);padding:12px 14px;font-size:12.5px;pointer-events:none;}
+.tipcard .tip-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.tipcard .tip-fix{font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:6px;line-height:1.35;}
+.tipcard .tip-row{color:var(--text);margin-bottom:4px;line-height:1.4;}
+.tipcard .tip-row b{color:var(--ink);}
+.tipcard .tip-cam{background:var(--red-bg);border:1px solid var(--red-border);border-radius:6px;padding:6px 8px;color:#7f1d1d;margin-top:6px;}
+mark.hl{transition:filter .12s;}
+mark.hl:hover{filter:brightness(.94);}
+
+/* ---- reminder + notice boxes ---- */
+.reminder{margin-top:14px;background:var(--amber-bg);border:1px solid var(--amber);border-radius:9px;padding:13px 15px;}
+.reminder .rtext{font-size:13px;color:#78350F;}
+.notice-box{background:#FFFBEB;border:1px solid var(--amber);border-radius:8px;padding:10px 13px;font-size:12px;color:#78350F;margin-bottom:12px;line-height:1.6;}
+
+/* ---- tracked-changes diff (Word style) ---- */
+.diff-body{padding:11px 13px;font-size:12.5px;line-height:1.9;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;background:#fff;border-radius:6px;}
+.diff-del{background:#FEE2E2;color:#B91C1C;text-decoration:line-through;border-radius:2px;padding:0 1px;}
+.diff-add{background:#FEE2E2;color:#B91C1C;text-decoration:underline;border-radius:2px;padding:0 1px;font-weight:600;}
