@@ -158,13 +158,8 @@ export default function Home() {
         </div>
       )}
       <header className="app-header">
-        <div className="wrap row">
-          <div>
-            <div className="eyebrow">For the Turing Waymo Team · Caption Labeling QC</div>
-            <h1>Rubric QC Tool</h1>
-            <div className="sub">Paste your work, run one combined review, fix &amp; re-check, then submit. Powered by Opus 4.8.</div>
-          </div>
-          <a className="adminlink" href="/admin">Reviewer view →</a>
+        <div className="wrap" style={{ textAlign: "center" }}>
+          <h1 style={{ margin: 0 }}>Turing Waymo Caption Labeling Support Tool</h1>
         </div>
       </header>
 
@@ -473,7 +468,7 @@ function TrackedDiff({ label, before, after }) {
       <summary><span className="chev">▸</span> {label} <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>(tracked changes)</span></summary>
       <div className="ebody">
         {show && <TrackedBody before={before} after={after} />}
-        <div className="note" style={{ marginTop: 6 }}><span className="diff-del">red strike = removed from pre-seed</span> · <span className="diff-add">red underline = added in revision</span></div>
+        <div className="note" style={{ marginTop: 6 }}><span className="diff-del">red dashed = removed</span> · <span className="diff-add">green bold = added</span></div>
       </div>
     </details>
   );

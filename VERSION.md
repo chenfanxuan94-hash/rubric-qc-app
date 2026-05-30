@@ -1,6 +1,16 @@
 # Rubric QC Tool — version log
 
-## v3.2.2  (current) — precise contradictions + more rubric coverage + UX
+## v3.2.3  (current) — anti-over-reading + decisive Temporal + cosmetics
+- GOVERNING RULE added: if two statements can be reconciled under ANY reasonable reading, it is NOT a contradiction. Only genuine, unreconcilable, explicit conflicts are flagged. This generalizes the whole class of false positives.
+- LOOSE SPATIAL LANGUAGE: "behind", "ahead", "near" are approximate positions, not lane claims. "I am behind the bus" + "bus in the right adjacent lane" is reconcilable (diagonally behind-and-right) → NOT a contradiction. Trained with this exact example.
+- TIME HORIZON: a route GOAL ("my plan is to turn right ahead") does not contradict the immediate 5-second action ("stop now for the light"). Only same-horizon conflicts count.
+- HEDGING stays flagged (your call) but smarter: flag "possibly/might" only when it softens a COMMITTED action/observation, not genuine uncertainty of degree.
+- DECISIVE TEMPORAL: the advisor now commits to "yes" when the scene matches a canonical Temporal case (active school bus, cut-in, pedestrian/animal motion, signal change) instead of wishy-washy "maybe".
+- DIFF COLORS: added = green bold; removed = red dashed strikethrough.
+- TITLE: renamed to "Turing Waymo Caption Labeling Support Tool", centered, eyebrow + subtitle removed.
+- BIGGER TEXT throughout (results, tooltips, labels, tables) for readability.
+
+## v3.2.2
 - CONTRADICTION rule rewritten to THREE precise triggers only: (1) decision-flip (a committed decision vs a different final action), (2) same-object attribute mismatch (input says black car, action avoids the silver car), (3) safety-critical omission → MAJOR (observes police/active school bus/red light/pedestrian but the final plan doesn't carry it into rationale/action). Explored/rejected alternatives and paraphrases/degrees ("brake firmly to a stop" vs "no hard brake needed") are NEVER flagged. Trained on your exact screenshots.
 - CAMERA CHECKS are now built from the tasker's OWN mentioned objects ("white sedan adjacent lane?", "bus stop-sign extended?") — scene-dependent items (M4, M7/M8 hallucination, m9–m12) stay camera-checks only, never flags.
 - m14 LOGICAL FLOW judged HOLISTICALLY (structure varies per task) — only obviously-broken flow is flagged, and it's tagged m14 (no more nonsense "m15 · structure").

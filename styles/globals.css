@@ -256,8 +256,8 @@ mark.hl:hover{filter:brightness(.94);}
 
 /* ---- tracked-changes diff (Word style) ---- */
 .diff-body{padding:11px 13px;font-size:12.5px;line-height:1.9;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;background:#fff;border-radius:6px;}
-.diff-del{background:#FEE2E2;color:#B91C1C;text-decoration:line-through;border-radius:2px;padding:0 1px;}
-.diff-add{background:#FEE2E2;color:#B91C1C;text-decoration:underline;border-radius:2px;padding:0 1px;font-weight:600;}
+.diff-del{background:#FEE2E2;color:#B91C1C;text-decoration:line-through dashed;border-radius:2px;padding:0 1px;}
+.diff-add{background:#DCFCE7;color:#166534;border-radius:2px;padding:0 1px;font-weight:700;}
 
 /* ---- v3.1 modal + revision history ---- */
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -295,3 +295,44 @@ mark.hl:hover{filter:brightness(.94);}
 /* ---- v3.2.2 locked pre-seed ---- */
 textarea.locked{background:#F1F5F9;color:var(--muted);cursor:default;border-style:dashed;}
 textarea.locked:focus{box-shadow:none;border-color:var(--rule-dark);}
+
+/* ---- v3.2.3 bigger, more readable text throughout ---- */
+.disclaimer p{font-size:13.5px;}
+.card h2{font-size:13px;}
+.field label{font-size:13.5px;}
+.field .hint{font-size:12px;}
+input[type=text], textarea, select{font-size:13.5px;line-height:1.6;}
+.skipq .q{font-size:13.5px;}
+.yn button{font-size:12.5px;}
+.cam{font-size:12.5px;padding:7px 12px;}
+.hl-panel .hl-head{font-size:11px;}
+.hl-body{font-size:14px;line-height:1.9;}
+mark.hl sup.hl-num{font-size:10px;}
+.pt-sev{font-size:10px;}
+.pt-code{font-size:11px;}
+.pt-fix{font-size:14px;}
+.pt-detail{font-size:13.5px;}
+.pt-num{font-size:11.5px;}
+.guidance .g-row{font-size:13.5px;}
+.note{font-size:12.5px;}
+.notice-box{font-size:12.5px;}
+.banner-err{font-size:13px;}
+.expander summary{font-size:13px;}
+.review-item .qt{font-size:13.5px;}
+.review-item .qc{font-size:11px;}
+.sweep-item{font-size:12px;}
+.diff-body{font-size:13.5px;}
+.consist{font-size:13px;}
+.consist-label{font-size:10.5px;}
+.tipcard{font-size:13px;}
+.tipcard .tip-fix{font-size:14.5px;}
+.tipcard .tip-row{font-size:13px;}
+.tipcard .tip-cam{font-size:12.5px;}
+.cm-row{font-size:13px;}
+.tk-stat{font-size:12.5px;}
+.tk-codes{font-size:11.5px;}
+.rev-pill{font-size:11.5px;}
+.linkbtn{font-size:12.5px;}
+.hist-head{font-size:13px;}
+table.subs{font-size:13px;}
+.app-header h1{font-size:21px;letter-spacing:.3px;}
