@@ -1,6 +1,15 @@
 # Rubric QC Tool — version log
 
-## v3.2.1  (current) — false-positive reduction (trained reasoning)
+## v3.2.2  (current) — precise contradictions + more rubric coverage + UX
+- CONTRADICTION rule rewritten to THREE precise triggers only: (1) decision-flip (a committed decision vs a different final action), (2) same-object attribute mismatch (input says black car, action avoids the silver car), (3) safety-critical omission → MAJOR (observes police/active school bus/red light/pedestrian but the final plan doesn't carry it into rationale/action). Explored/rejected alternatives and paraphrases/degrees ("brake firmly to a stop" vs "no hard brake needed") are NEVER flagged. Trained on your exact screenshots.
+- CAMERA CHECKS are now built from the tasker's OWN mentioned objects ("white sedan adjacent lane?", "bus stop-sign extended?") — scene-dependent items (M4, M7/M8 hallucination, m9–m12) stay camera-checks only, never flags.
+- m14 LOGICAL FLOW judged HOLISTICALLY (structure varies per task) — only obviously-broken flow is flagged, and it's tagged m14 (no more nonsense "m15 · structure").
+- TAGS show the REAL rubric name (e.g. "M7 · Safety/Compliance", "m15 · Grammar & syntax"); invented words like "structure"/"consistency" removed.
+- m13 (missing plan option) is a gentle note, not a punishing flag. m16 only for decision-critical non-front objects; m17 = blank Minimal Input.
+- MINIMAL INPUT merged into the same combined section as trace+plan (no longer a separate block); evaluated together; optional gentle "suggest" inline.
+- PRE-SEED LOCKS after the first run (read-only, greyed, still scrollable) so taskers only edit their own revision.
+
+## v3.2.1
 - TRACE IS TEMPORAL: the model is now trained that a trace moves through time — current-state observation ("I am in the middle lane") vs the committed plan ("I will stay in the right-most lane") are DIFFERENT MOMENTS, not a contradiction. A real contradiction requires two claims about the SAME attribute at the SAME moment. Fixes the false M5 "middle vs right-most lane" flag.
 - PHANTOM-LEAD = strict (option b): only flagged when the TEXT contradicts itself about the same vehicle's lane (calls it a same-lane lead AND places it in an adjacent lane). A plain description of a car in an adjacent lane is no longer flagged.
 - CAMERA CHECKS ARE SEPARATE: anything camera-dependent (blue car in my lane? officer gesturing proceed?) appears ONLY in the camera-check list — never as a major/minor flag and never as a highlighted span. Keeps the flags list uncluttered.

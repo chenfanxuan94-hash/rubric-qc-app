@@ -217,10 +217,10 @@ export default function Home() {
           <h2><span className="n">2</span> Captions — pre-seed &amp; your revision</h2>
           <p className="note" style={{ marginBottom: 14 }}>Paste the pre-seed and your revised versions. Pre-seed is optional (leave blank to skip the comparison). The trace and plan are always checked <b>together</b> for consistency.</p>
 
-          <div className="field"><label>Thinking Trace</label></div>
+          <div className="field"><label>Thinking Trace {revisions.length > 0 && <span className="hint" style={{ color: "var(--teal)" }}>· pre-seed locked after first run (read-only)</span>}</label></div>
           <div className="two-col" style={{ marginBottom: 16 }}>
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Pre-seed trace (optional)</label>
-              <textarea value={preseedTrace} onChange={(e) => setPreseedTrace(e.target.value)} placeholder="Paste the original pre-seed trace (optional)..." /></div>
+              <textarea className={revisions.length > 0 ? "locked" : ""} readOnly={revisions.length > 0} value={preseedTrace} onChange={(e) => setPreseedTrace(e.target.value)} placeholder="Paste the original pre-seed trace (optional)..." /></div>
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised trace</label>
               <textarea value={revisedTrace} onChange={(e) => setRevisedTrace(e.target.value)} placeholder="Paste your edited trace..." /></div>
           </div>
@@ -228,9 +228,25 @@ export default function Home() {
           <div className="field"><label>Driving Plan</label></div>
           <div className="two-col">
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Pre-seed plan (optional)</label>
-              <textarea value={preseedPlan} onChange={(e) => setPreseedPlan(e.target.value)} placeholder="Paste the original pre-seed plan (optional)..." /></div>
+              <textarea className={revisions.length > 0 ? "locked" : ""} readOnly={revisions.length > 0} value={preseedPlan} onChange={(e) => setPreseedPlan(e.target.value)} placeholder="Paste the original pre-seed plan (optional)..." /></div>
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised plan</label>
               <textarea value={revisedPlan} onChange={(e) => setRevisedPlan(e.target.value)} placeholder="Paste your edited plan..." /></div>
+          </div>
+
+          {/* Minimal Input — part of the same combined evaluation */}
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--rule)" }}>
+            <div className="field"><label>Minimal Input <span className="hint">(default SVC-F; add a camera only if the decision needs it)</span></label>
+              <div className="cams">{CAMERAS.map((c) => (<span key={c} className={"cam" + (cameras.includes(c) ? " on" : "")} onClick={() => toggleCam(c)}>{c}</span>))}</div>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <div className="toggle-row">
+                <label className="switch"><input type="checkbox" checked={temporal} onChange={(e) => setTemporal(e.target.checked)} /><span className="slider" /></label>
+                <label style={{ margin: 0, fontWeight: 500 }}>Temporal selected</label>
+                <button className="linkbtn" style={{ marginLeft: 14 }} onClick={suggestMin} disabled={cam.loading}>{cam.loading ? "thinking…" : "💡 suggest (optional)"}</button>
+              </div>
+              {cam.err && <div className="banner-err" style={{ marginTop: 10 }}>{cam.err}</div>}
+              {cam.res && <CameraResult a={cam.res} />}
+            </div>
           </div>
 
           <div className="btns" style={{ marginTop: 16 }}>
@@ -305,28 +321,6 @@ export default function Home() {
                 preTrace={preseedTrace} prePlan={preseedPlan} />
             </div>
           )}
-        </div>
-
-        {/* PART 3 — minimal input advisor (gentle, opt-in) */}
-        <div className="card">
-          <h2><span className="n">3</span> Minimal Input</h2>
-          <div className="field"><label>Your selection <span className="hint">(default SVC-F; add only what's needed)</span></label>
-            <div className="cams">{CAMERAS.map((c) => (<span key={c} className={"cam" + (cameras.includes(c) ? " on" : "")} onClick={() => toggleCam(c)}>{c}</span>))}</div>
-          </div>
-          <div className="field">
-            <div className="toggle-row">
-              <label className="switch"><input type="checkbox" checked={temporal} onChange={(e) => setTemporal(e.target.checked)} /><span className="slider" /></label>
-              <label style={{ margin: 0, fontWeight: 500 }}>Temporal selected</label>
-            </div>
-          </div>
-          <p className="note" style={{ margin: "4px 0 10px" }}>Optional: get a gentle hint from the text about cameras / Temporal. <b>This is a suggestion to confirm against the video — you decide, not the AI.</b></p>
-          <div className="btns">
-            <button className="ghost" onClick={suggestMin} disabled={cam.loading}>
-              {cam.loading ? <><span className="spinner" />Thinking…</> : "💡 Suggest cameras / Temporal (optional)"}
-            </button>
-          </div>
-          {cam.err && <div className="banner-err" style={{ marginTop: 12 }}>{cam.err}</div>}
-          {cam.res && <CameraResult a={cam.res} />}
         </div>
 
         {/* SUBMIT */}

@@ -291,3 +291,7 @@ mark.hl:hover{filter:brightness(.94);}
 .consist-val{font-weight:700;}
 .consist.ok .consist-val{color:var(--green);} .consist.bad .consist-val{color:var(--red);} .consist.unk .consist-val{color:var(--muted);}
 .consist-detail{color:var(--text);flex:1;min-width:200px;}
+
+/* ---- v3.2.2 locked pre-seed ---- */
+textarea.locked{background:#F1F5F9;color:var(--muted);cursor:default;border-style:dashed;}
+textarea.locked:focus{box-shadow:none;border-color:var(--rule-dark);}
