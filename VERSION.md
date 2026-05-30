@@ -1,6 +1,14 @@
 # Rubric QC Tool — version log
 
-## v3.2.4  (current) — scaffolding fix, grammar suggestions, M3 framing
+## v3.3.0  (current) — Opus grammar sweep (Grammarly-style)
+- NEW: a dedicated, comprehensive GRAMMAR SWEEP runs automatically as part of "Run check" (in parallel with the rubric check, so it adds no wait). It catches mechanical errors throughout — spelling, doubled words, double spaces, subject-verb agreement, tense, punctuation, capitalization, articles — and highlights them ALL at once inline, in a distinct BLUE wavy underline (separate from the red/amber rubric highlights).
+- Hover any blue grammar mark to see "original → suggestion". A collapsible "Grammar & mechanics (N)" list shows every fix as original → suggestion, grouped by trace/plan.
+- KEPT SEPARATE FROM SCORING: grammar findings are their own layer and do NOT affect the rubric score or the major/minor counts. The rubric's m15 still flags rubric-level writing issues; the sweep is the exhaustive mechanical pass on top.
+- Mechanical only — no stylistic nags (no serial-comma/word-choice nitpicks). Ignores the standard trace scaffolding (VLM opener, stage headers), camera names, units, and coordinates.
+- Runs entirely through the existing Opus pipeline — no new vendor, no new API key, and Waymo task text never leaves your pipeline.
+- Grammar results are saved with the submission for the reviewer.
+
+## v3.2.4
 - TRACE SCAFFOLDING: the golden examples KEEP the opening "The user wants me to act as a VLM..." line and the numbered stage headers (1. Analyze the input … 4. Final Plan), so these are NO LONGER flagged. Only CLOSING leftover scaffolding is flagged ("This covers all the required parts", "Drafting the final output", "The plan is ready to be written", "Refine the output…"). The DRIVING PLAN must still have no meta-narration.
 - GRAMMAR FINDINGS now always include a CONCRETE correction: quote the exact broken text → exact replacement (e.g. "'the the left turn' → 'the left turn'"). No more vague "fix typos".
 - TRACE↔PLAN (M3) framing corrected to the canonical: the Driving Plan must be structurally consistent with the Trace and cannot introduce an action/object the trace doesn't establish; both must match the camera. The fix is framed as "make the plan consistent with the trace, then confirm on camera." The model no longer invents "leftover from pre-seed" history unless the pre-seed text actually contains the phrase.

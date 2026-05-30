@@ -34,6 +34,7 @@ export default function Home() {
   const [temporal, setTemporal] = useState(false);
 
   const [full, setFull] = useState({ loading: false, res: null, err: null, raw: null, notices: [] });
+  const [gram, setGram] = useState({ loading: false, res: null, err: null });
   const [cam, setCam] = useState({ loading: false, res: null, err: null });
   const [missing, setMissing] = useState(null); // missing revised fields
   const [ctxMissing, setCtxMissing] = useState(null); // missing required context
@@ -77,9 +78,12 @@ export default function Home() {
   async function doRun() {
     setMissing(null); setSubmitted(false);
     setFull({ loading: true, res: null, err: null, raw: null, notices: [] });
-    const d = await callApi("/api/check", { ...base(), priorFindings: prevFindings });
+    setGram({ loading: true, res: null, err: null });
+    const [d, g] = await Promise.all([
+      callApi("/api/check", { ...base(), priorFindings: prevFindings }),
+      callApi("/api/grammar", base(), 120000),
+    ]);
     if (d.analysis) {
-      // capture this revision snapshot
       const snap = {
         trace: revisedTrace, plan: revisedPlan,
         verdict: d.analysis.verdict,
@@ -91,6 +95,7 @@ export default function Home() {
       setPrevFindings({ major_risks: d.analysis.major_risks || [], minor_flags: d.analysis.minor_flags || [] });
     }
     setFull({ loading: false, res: d.analysis || null, err: d.error || null, raw: d.raw || null, notices: d.analysis ? noticesFor() : [] });
+    setGram({ loading: false, res: (g.grammar && Array.isArray(g.grammar.errors)) ? g.grammar.errors : [], err: g.error || null });
   }
 
   async function suggestMin() {
@@ -112,7 +117,7 @@ export default function Home() {
     const d = await callApi("/api/submit", {
       ...base(),
       analysis: full.res,
-      sectionResults: { camera: cam.res },
+      sectionResults: { camera: cam.res, grammar: gram.res },
       revisions,
       score: scoreOf(full.res),
     }, 30000);
@@ -130,7 +135,7 @@ export default function Home() {
     setTaskId(""); setTriageNote(""); setSkipped(false); setSkipAnswers({});
     setPreseedTrace(""); setRevisedTrace(""); setPreseedPlan(""); setRevisedPlan("");
     setCameras([]); setTemporal(false);
-    setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setCam({ loading: false, res: null, err: null });
+    setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
     setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
     setRevisions([]); setPrevFindings(null); setShowHistory(false); setUnsavedModal(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -312,6 +317,7 @@ export default function Home() {
               )}
               <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
                 tracePoints={tracePoints} planPoints={planPoints}
+                grammar={gram.res} grammarErr={gram.err}
                 traceText={revisedTrace} planText={revisedPlan}
                 preTrace={preseedTrace} prePlan={preseedPlan} />
             </div>
@@ -342,11 +348,27 @@ const SEV_COLOR = {
   major: { bg: "#FEE2E2", bd: "#DC2626", tx: "#991B1B" }, // red
   minor: { bg: "#FEF3C7", bd: "#F59E0B", tx: "#92400E" }, // amber/beige
 };
+const GRAMMAR_COLOR = { bg: "#DBEAFE", bd: "#2563EB", tx: "#1E40AF" }; // blue
 
 function assignPoints(a) {
   const majors = (a.major_risks || []).map((f) => ({ ...f, sev: "major" }));
   const minors = (a.minor_flags || []).map((f) => ({ ...f, sev: "minor" }));
   return [...majors, ...minors].map((f, i) => ({ ...f, _point: i + 1, _color: SEV_COLOR[f.sev] }));
+}
+
+// grammar errors -> point-like objects so segmentize can highlight them (blue layer)
+function grammarPoints(errors) {
+  return (errors || []).map((e, i) => ({
+    _grammar: true,
+    _point: "G" + (i + 1),
+    _color: GRAMMAR_COLOR,
+    where: e.where || "trace",
+    spans: [e.original],
+    original: e.original,
+    suggestion: e.suggestion,
+    gtype: e.type,
+    note: e.note,
+  }));
 }
 
 function segmentize(text, points) {
@@ -372,6 +394,18 @@ function TipCard({ tip }) {
   const w = 330;
   let left = tip.x; if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12; if (left < 12) left = 12;
   const top = tip.y + 8;
+  if (p._grammar) {
+    return (
+      <div className="tipcard" style={{ left, top, width: w, borderColor: p._color.bd }}>
+        <div className="tip-head">
+          <span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>grammar</span>
+          <span className="pt-code">{p.gtype || "fix"}</span>
+        </div>
+        <div className="tip-fix"><span className="g-orig">{p.original}</span> → <span className="g-sug">{p.suggestion}</span></div>
+        {p.note && <div className="tip-row">{p.note}</div>}
+      </div>
+    );
+  }
   return (
     <div className="tipcard" style={{ left, top, width: w, borderColor: p._color.bd }}>
       <div className="tip-head">
@@ -396,11 +430,13 @@ function HighlightedText({ label, text, points, setTip, hoveredPoint, emptyMsg }
       <div className="hl-head">{label}{!anyMark && points.length > 0 ? " — couldn't pin spans; see list below" : ""}</div>
       <div className="hl-body">
         {segs.map((s, i) => s.mark
-          ? <mark key={i} className={"hl" + (hoveredPoint === s.mark.p._point ? " linked" : "")}
-              style={{ background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }}
+          ? <mark key={i} className={"hl" + (s.mark.p._grammar ? " hl-gram" : "") + (hoveredPoint === s.mark.p._point ? " linked" : "")}
+              style={s.mark.p._grammar
+                ? { textDecorationColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }
+                : { background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }}
               onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ p: s.mark.p, x: r.left, y: r.bottom }); }}
               onMouseLeave={() => setTip(null)}>
-              {s.text}<sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>
+              {s.text}{!s.mark.p._grammar && <sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>}
             </mark>
           : <span key={i}>{s.text}</span>)}
       </div>
@@ -510,7 +546,13 @@ function CameraResult({ a }) {
   );
 }
 
-function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, traceText, planText, preTrace, prePlan }) {
+function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar, grammarErr, traceText, planText, preTrace, prePlan }) {
+  const gPoints = grammarPoints(grammar);
+  const gTrace = gPoints.filter((p) => p.where !== "plan");
+  const gPlan = gPoints.filter((p) => p.where === "plan");
+  // rubric points first so they win any overlap with grammar spans
+  const traceAll = [...tracePoints, ...gTrace];
+  const planAll = [...planPoints, ...gPlan];
   return (
     <div>
       <CompactVerdict a={a} />
@@ -526,15 +568,44 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, traceTex
 
       {a.skip_check && a.skip_check.decision_coherent === false && (<div className="banner-err" style={{ marginBottom: 8 }}>⚑ Skip decision may be inconsistent: {a.skip_check.note}</div>)}
 
-      <HighlightedText label="Revised trace — hover a highlight for details" text={traceText} points={tracePoints} setTip={setTip} hoveredPoint={hoveredPoint} />
-      <HighlightedText label="Revised plan — hover a highlight for details" text={planText} points={planPoints} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
+      <div className="legend">
+        <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
+        <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
+        <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
+        <span className="note" style={{ margin: 0 }}>hover any highlight for the fix</span>
+      </div>
+
+      <HighlightedText label="Revised trace" text={traceText} points={traceAll} setTip={setTip} hoveredPoint={hoveredPoint} />
+      <HighlightedText label="Revised plan" text={planText} points={planAll} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
 
       {(tracePoints.length + planPoints.length) > 0 && (
         <div className="pt-list">
-          <div className="mini-head" style={{ color: "var(--ink)" }}>All flagged points</div>
+          <div className="mini-head" style={{ color: "var(--ink)" }}>Rubric findings</div>
           {[...tracePoints, ...planPoints].sort((x, y) => x._point - y._point).map((p, i) => <PointRow key={i} p={p} />)}
         </div>
       )}
+
+      {/* Grammar sweep — separate, comprehensive, does not affect score */}
+      {grammarErr ? (
+        <div className="notice-box" style={{ marginTop: 10 }}>Grammar sweep unavailable: {grammarErr}</div>
+      ) : gPoints.length > 0 ? (
+        <details className="expander" style={{ marginTop: 10 }} open>
+          <summary><span className="chev">▸</span> Grammar &amp; mechanics ({gPoints.length}) <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>— separate from score</span></summary>
+          <div className="ebody">
+            {gPoints.map((p, i) => (
+              <div className="gfix" key={i}>
+                <span className="gfix-where">{p.where}</span>
+                <span className="g-orig">{p.original}</span>
+                <span className="g-arrow">→</span>
+                <span className="g-sug">{p.suggestion}</span>
+                {p.note && <span className="gfix-note">{p.note}</span>}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : (a.major_risks || a.minor_flags) ? (
+        <div className="note" style={{ marginTop: 10 }}>✓ No mechanical grammar issues found.</div>
+      ) : null}
 
       <TrackedDiff label="Trace diff (pre-seed → revised)" before={preTrace} after={traceText} />
       <TrackedDiff label="Plan diff (pre-seed → revised)" before={prePlan} after={planText} />
