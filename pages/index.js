@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { SKIP_QUESTIONS } from "../lib/rubricKnowledge.js";
 
-const CAMERAS = ["SVC-F", "SVC-FL", "SVC-FR", "SVC-L", "SVC-R", "SVC-B"];
+const CAMERAS = ["SVC-F", "SVC-FL", "SVC-FR", "SVC-SL", "SVC-SR", "SVC-RL", "SVC-RR", "SVC-R"];
 
 async function callApi(url, body, ms = 290000) {
   const ctrl = new AbortController();
@@ -299,7 +299,7 @@ export default function Home() {
                   {full.notices.map((n, i) => <div key={i}>• {n}</div>)}
                 </div>
               )}
-              <FullResult a={full.res} setTip={setTip}
+              <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
                 tracePoints={tracePoints} planPoints={planPoints}
                 traceText={revisedTrace} planText={revisedPlan}
                 preTrace={preseedTrace} prePlan={preseedPlan} />
@@ -398,7 +398,7 @@ function TipCard({ tip }) {
   );
 }
 
-function HighlightedText({ label, text, points, setTip, emptyMsg }) {
+function HighlightedText({ label, text, points, setTip, hoveredPoint, emptyMsg }) {
   if (!text) return emptyMsg ? <div className="hl-panel"><div className="hl-head">{label}</div><div className="hl-body" style={{ color: "var(--muted)", fontStyle: "italic" }}>{emptyMsg}</div></div> : null;
   const segs = segmentize(text, points);
   const anyMark = segs.some((s) => s.mark);
@@ -407,10 +407,11 @@ function HighlightedText({ label, text, points, setTip, emptyMsg }) {
       <div className="hl-head">{label}{!anyMark && points.length > 0 ? " — couldn't pin spans; see list below" : ""}</div>
       <div className="hl-body">
         {segs.map((s, i) => s.mark
-          ? <mark key={i} className="hl" style={{ background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd }}
+          ? <mark key={i} className={"hl" + (hoveredPoint === s.mark.p._point ? " linked" : "")}
+              style={{ background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }}
               onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ p: s.mark.p, x: r.left, y: r.bottom }); }}
               onMouseLeave={() => setTip(null)}>
-              {s.text}<sup style={{ color: s.mark.p._color.tx }}>#{s.mark.p._point}</sup>
+              {s.text}<sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>
             </mark>
           : <span key={i}>{s.text}</span>)}
       </div>
@@ -510,33 +511,34 @@ function CameraResult({ a }) {
     <div style={{ marginTop: 14 }}>
       <div className="guidance">
         <div className="g-row" style={{ fontSize: 13, marginBottom: 8 }}><b>{a.summary}</b></div>
-        <div className="g-row"><b>Cameras the text implies:</b> {a.cameras_text_implies?.length ? a.cameras_text_implies.join(", ") : "—"}</div>
-        {a.camera_reasoning?.length > 0 && (
-          <details className="expander" style={{ marginTop: 6, marginBottom: 6 }}><summary><span className="chev">▸</span> Why these cameras</summary>
-            <div className="ebody"><ul style={{ margin: "0 0 0 18px", fontSize: 12 }}>{a.camera_reasoning.map((c, i) => <li key={i}><b>{c.camera}</b> — {c.because}</li>)}</ul></div></details>
-        )}
+        <div className="g-row"><b>Recommended minimal set:</b> {a.recommended?.length ? a.recommended.join(", ") : "SVC-F"}</div>
+        {a.reasoning && <div className="g-row" style={{ color: "var(--text)" }}>{a.reasoning}</div>}
         <div className="g-row"><b>Temporal?</b> <span style={{ textTransform: "uppercase", fontFamily: "var(--mono)", fontSize: 11, color: a.temporal_needed === "yes" ? "var(--red)" : a.temporal_needed === "maybe" ? "var(--amber-text)" : "var(--green)" }}>{a.temporal_needed}</span> — {a.temporal_reason}</div>
-        {a.missing_from_selection?.length > 0 && (<div className="g-row" style={{ color: "var(--red)" }}><b>⚠ Not selected (text implies):</b> {a.missing_from_selection.join(", ")}</div>)}
-        {a.extra_in_selection?.length > 0 && (<div className="g-row" style={{ color: "var(--amber-text)" }}><b>Selected but unused:</b> {a.extra_in_selection.join(", ")}</div>)}
-        {a.temporal_mismatch && a.temporal_mismatch !== "none" && (<div className="g-row" style={{ color: "var(--red)" }}><b>Temporal:</b> {a.temporal_mismatch === "should_add" ? "consider ADDING Temporal" : "consider REMOVING Temporal"}</div>)}
-        <div className="note" style={{ marginTop: 8 }}>Reminder: confirm against the video. This is a hint, not a decision.</div>
+        {a.selection_feedback && <div className="g-row"><b>Your selection:</b> {a.selection_feedback}</div>}
+        <div className="note" style={{ marginTop: 8 }}>Reminder: this is a hint to confirm against the video — you decide, not the AI.</div>
       </div>
     </div>
   );
 }
 
-function FullResult({ a, setTip, tracePoints, planPoints, traceText, planText, preTrace, prePlan }) {
+function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, traceText, planText, preTrace, prePlan }) {
   return (
     <div>
       <CompactVerdict a={a} />
       {a.summary && <p className="note" style={{ marginBottom: 12 }}>{a.summary}</p>}
 
-      {a.skip_check && a.skip_check.decision_coherent === false && (<div className="banner-err" style={{ marginBottom: 8 }}>⚑ Skip decision may be inconsistent: {a.skip_check.note}</div>)}
-      {a.trace_plan_consistency && a.trace_plan_consistency.consistent === false && (<div className="banner-err" style={{ marginBottom: 8 }}>⚑ Trace↔Plan mismatch (M3): {a.trace_plan_consistency.detail}</div>)}
-      {a.trace_plan_consistency && a.trace_plan_consistency.consistent === "unknown" && (<div className="notice-box" style={{ marginBottom: 8 }}>Trace↔Plan consistency not checked: {a.trace_plan_consistency.detail}</div>)}
+      {a.trace_plan_consistency && (
+        <div className={"consist " + (a.trace_plan_consistency.consistent === true ? "ok" : a.trace_plan_consistency.consistent === false ? "bad" : "unk")}>
+          <span className="consist-label">Trace ↔ Plan consistency</span>
+          <span className="consist-val">{a.trace_plan_consistency.consistent === true ? "✓ Consistent" : a.trace_plan_consistency.consistent === false ? "⚑ Mismatch (M3)" : "Not checked"}</span>
+          <span className="consist-detail">{a.trace_plan_consistency.detail}</span>
+        </div>
+      )}
 
-      <HighlightedText label="Revised trace — hover a highlight for details" text={traceText} points={tracePoints} setTip={setTip} />
-      <HighlightedText label="Revised plan — hover a highlight for details" text={planText} points={planPoints} setTip={setTip} emptyMsg={!planText ? "No revised plan provided." : null} />
+      {a.skip_check && a.skip_check.decision_coherent === false && (<div className="banner-err" style={{ marginBottom: 8 }}>⚑ Skip decision may be inconsistent: {a.skip_check.note}</div>)}
+
+      <HighlightedText label="Revised trace — hover a highlight for details" text={traceText} points={tracePoints} setTip={setTip} hoveredPoint={hoveredPoint} />
+      <HighlightedText label="Revised plan — hover a highlight for details" text={planText} points={planPoints} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
 
       {(tracePoints.length + planPoints.length) > 0 && (
         <div className="pt-list">

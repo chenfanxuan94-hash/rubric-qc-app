@@ -1,6 +1,20 @@
 # Rubric QC Tool — version log
 
-## v3.1.0  (current)
+## v3.2.0  (current) — accuracy & canonical-fidelity pass
+Re-read the canonical SOP and corrected real errors:
+- FLAG DISCIPLINE (the big fix): a Major/minor flag is only raised for things DEMONSTRABLE FROM TEXT (contradictions, trace↔plan mismatch, leftovers, hedging, grammar, structure, triage-intent mismatch). Anything that needs the camera to confirm (e.g. "is the officer gesturing proceed vs stop?") is NO LONGER mislabeled as a rubric violation — it becomes a short camera check. Fixes the "missed hazard" mislabel.
+- CAMERA LIST CORRECTED to the canonical set: SVC-F, SVC-FL, SVC-FR, SVC-SL, SVC-SR, SVC-RL, SVC-RR, SVC-R (previously had wrong SVC-L/R/B).
+- MINIMAL INPUT now matches canonical: the FEWEST cameras needed for the DECISION. Default SVC-F; only add a camera if the decision truly requires it (not because an object is "on the left"). The advisor is now conservative.
+- TEMPORAL corrected to the canonical test: only when movement across multiple frames is essential (cut-in tracked across frames, pedestrian/animal motion, traffic-light STATE CHANGE). A static object or single-frame signal state does not need it.
+- SCENE GROUNDING (coordinates/object IDs) flagged as OUT OF SCOPE — never required or rewarded.
+- Redundancy bar raised: Rationale/Trajectory/Speed naturally restate the situation — that's structure, not redundancy. Only true verbatim duplication is flagged. Hedging/structure/leftover now prioritized.
+- CONTRADICTION evidence must NAME BOTH LOCATIONS and quote both ("Trajectory says '…' but Rationale says '…'"), and both spans highlight together.
+- CAMERA CHECKS are now terse (2–5 words: "Officer gesturing proceed?", "Object in lane?") instead of long sentences.
+- HOVER-LINKING: kept just two colors (Major=red, minor=amber) but hovering any highlighted span now outlines ALL spans of that same issue (across trace and plan), with a clear #N badge — so same-issue sentences are linkable without a rainbow.
+- Dedicated TRACE↔PLAN CONSISTENCY status block always shown at the top of results (consistent / mismatch / not-checked).
+- Minimal Input selection sits with the trace+plan and is evaluated by the one combined check; the optional advisor button is now conservative too.
+
+## v3.1.0
 - TITLE: "For the Turing Waymo Team" on the header.
 - SEVERITY COLORS: Major is always RED, minor is always amber/beige (dropped the per-point rainbow). Points still numbered for matching.
 - REQUIRED CONTEXT: name, Task ID, and triage note are now compulsory before any check (context improves accuracy). The check blocks and tells you what's missing.
