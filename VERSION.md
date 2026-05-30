@@ -1,6 +1,11 @@
 # Rubric QC Tool — version log
 
-## v3.2.3  (current) — anti-over-reading + decisive Temporal + cosmetics
+## v3.2.4  (current) — scaffolding fix, grammar suggestions, M3 framing
+- TRACE SCAFFOLDING: the golden examples KEEP the opening "The user wants me to act as a VLM..." line and the numbered stage headers (1. Analyze the input … 4. Final Plan), so these are NO LONGER flagged. Only CLOSING leftover scaffolding is flagged ("This covers all the required parts", "Drafting the final output", "The plan is ready to be written", "Refine the output…"). The DRIVING PLAN must still have no meta-narration.
+- GRAMMAR FINDINGS now always include a CONCRETE correction: quote the exact broken text → exact replacement (e.g. "'the the left turn' → 'the left turn'"). No more vague "fix typos".
+- TRACE↔PLAN (M3) framing corrected to the canonical: the Driving Plan must be structurally consistent with the Trace and cannot introduce an action/object the trace doesn't establish; both must match the camera. The fix is framed as "make the plan consistent with the trace, then confirm on camera." The model no longer invents "leftover from pre-seed" history unless the pre-seed text actually contains the phrase.
+
+## v3.2.3
 - GOVERNING RULE added: if two statements can be reconciled under ANY reasonable reading, it is NOT a contradiction. Only genuine, unreconcilable, explicit conflicts are flagged. This generalizes the whole class of false positives.
 - LOOSE SPATIAL LANGUAGE: "behind", "ahead", "near" are approximate positions, not lane claims. "I am behind the bus" + "bus in the right adjacent lane" is reconcilable (diagonally behind-and-right) → NOT a contradiction. Trained with this exact example.
 - TIME HORIZON: a route GOAL ("my plan is to turn right ahead") does not contradict the immediate 5-second action ("stop now for the light"). Only same-horizon conflicts count.
