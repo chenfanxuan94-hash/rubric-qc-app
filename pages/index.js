@@ -1,6 +1,8 @@
-// pages/index.js — v3.0.0
+// pages/index.js — v3.4.0
 import { useState } from "react";
 import { SKIP_QUESTIONS } from "../lib/rubricKnowledge.js";
+import { lintAll } from "../lib/sopLint.js";
+import ChatAssistant from "../components/ChatAssistant.js";
 
 const CAMERAS = ["SVC-F", "SVC-FL", "SVC-FR", "SVC-SL", "SVC-SR", "SVC-RL", "SVC-RR", "SVC-R"];
 
@@ -163,8 +165,9 @@ export default function Home() {
         </div>
       )}
       <header className="app-header">
-        <div className="wrap" style={{ textAlign: "center" }}>
+        <div className="wrap" style={{ position: "relative", textAlign: "center" }}>
           <h1 style={{ margin: 0 }}>Turing Waymo Caption Labeling Support Tool</h1>
+          <a className="adminlink-tr" href="/admin">Reviewer view →</a>
         </div>
       </header>
 
@@ -318,6 +321,7 @@ export default function Home() {
               <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
                 tracePoints={tracePoints} planPoints={planPoints}
                 grammar={gram.res} grammarErr={gram.err}
+                lint={lintAll(revisedTrace, revisedPlan)}
                 traceText={revisedTrace} planText={revisedPlan}
                 preTrace={preseedTrace} prePlan={preseedPlan} />
             </div>
@@ -339,6 +343,7 @@ export default function Home() {
 
         <div className="footer-note">Rehearsal / QC tool · your own task content · powered by Claude Opus 4.8.</div>
       </div>
+      <ChatAssistant askerName={taskerName} />
     </>
   );
 }
@@ -357,6 +362,8 @@ function assignPoints(a) {
 }
 
 // grammar errors -> point-like objects so segmentize can highlight them (blue layer)
+const SOPLINT_COLOR = { bg: "#EDE9FE", bd: "#7C3AED", tx: "#5B21B6" }; // violet
+
 function grammarPoints(errors) {
   return (errors || []).map((e, i) => ({
     _grammar: true,
@@ -371,9 +378,19 @@ function grammarPoints(errors) {
   }));
 }
 
-function segmentize(text, points) {
+// SOP-lint issues already carry exact offsets — build pre-located marks (more reliable than span search)
+function lintLocated(issues, which) {
+  return (issues || [])
+    .filter((e) => (e.where || "trace") === which)
+    .map((e, i) => ({
+      start: e.start, end: e.end,
+      p: { _lint: true, _point: "S" + (i + 1), _color: SOPLINT_COLOR, kind: e.kind, original: e.original, fix: e.fix, rule: e.rule },
+    }));
+}
+
+function segmentize(text, points, located = []) {
   if (!text) return [{ text: "" }];
-  const marks = [];
+  const marks = [...located.filter((m) => m && m.start >= 0 && m.end <= text.length)];
   points.forEach((p) => (p.spans || []).forEach((span) => {
     if (!span || span.trim().length < 4) return;
     let start = text.indexOf(span), len = span.length;
@@ -394,6 +411,18 @@ function TipCard({ tip }) {
   const w = 330;
   let left = tip.x; if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12; if (left < 12) left = 12;
   const top = tip.y + 8;
+  if (p._lint) {
+    return (
+      <div className="tipcard" style={{ left, top, width: w, borderColor: p._color.bd }}>
+        <div className="tip-head">
+          <span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>SOP rule</span>
+          <span className="pt-code">{p.kind}</span>
+        </div>
+        <div className="tip-fix">{p.fix}</div>
+        {p.rule && <div className="tip-row muted">{p.rule}</div>}
+      </div>
+    );
+  }
   if (p._grammar) {
     return (
       <div className="tipcard" style={{ left, top, width: w, borderColor: p._color.bd }}>
@@ -421,22 +450,22 @@ function TipCard({ tip }) {
   );
 }
 
-function HighlightedText({ label, text, points, setTip, hoveredPoint, emptyMsg }) {
+function HighlightedText({ label, text, points, located = [], setTip, hoveredPoint, emptyMsg }) {
   if (!text) return emptyMsg ? <div className="hl-panel"><div className="hl-head">{label}</div><div className="hl-body" style={{ color: "var(--muted)", fontStyle: "italic" }}>{emptyMsg}</div></div> : null;
-  const segs = segmentize(text, points);
+  const segs = segmentize(text, points, located);
   const anyMark = segs.some((s) => s.mark);
   return (
     <div className="hl-panel">
       <div className="hl-head">{label}{!anyMark && points.length > 0 ? " — couldn't pin spans; see list below" : ""}</div>
       <div className="hl-body">
         {segs.map((s, i) => s.mark
-          ? <mark key={i} className={"hl" + (s.mark.p._grammar ? " hl-gram" : "") + (hoveredPoint === s.mark.p._point ? " linked" : "")}
-              style={s.mark.p._grammar
+          ? <mark key={i} className={"hl" + (s.mark.p._grammar ? " hl-gram" : "") + (s.mark.p._lint ? " hl-lint" : "") + (hoveredPoint === s.mark.p._point ? " linked" : "")}
+              style={(s.mark.p._grammar || s.mark.p._lint)
                 ? { textDecorationColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }
                 : { background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd, outlineColor: s.mark.p._color.bd }}
               onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ p: s.mark.p, x: r.left, y: r.bottom }); }}
               onMouseLeave={() => setTip(null)}>
-              {s.text}{!s.mark.p._grammar && <sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>}
+              {s.text}{!s.mark.p._grammar && !s.mark.p._lint && <sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>}
             </mark>
           : <span key={i}>{s.text}</span>)}
       </div>
@@ -546,10 +575,12 @@ function CameraResult({ a }) {
   );
 }
 
-function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar, grammarErr, traceText, planText, preTrace, prePlan }) {
+function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan }) {
   const gPoints = grammarPoints(grammar);
   const gTrace = gPoints.filter((p) => p.where !== "plan");
   const gPlan = gPoints.filter((p) => p.where === "plan");
+  const lintTrace = lintLocated(lint, "trace");
+  const lintPlan = lintLocated(lint, "plan");
   // rubric points first so they win any overlap with grammar spans
   const traceAll = [...tracePoints, ...gTrace];
   const planAll = [...planPoints, ...gPlan];
@@ -572,11 +603,12 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar,
         <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
         <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
         <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
+        <span><i className="lg gram" style={{ borderColor: SOPLINT_COLOR.bd }} /> SOP rule</span>
         <span className="note" style={{ margin: 0 }}>hover any highlight for the fix</span>
       </div>
 
-      <HighlightedText label="Revised trace" text={traceText} points={traceAll} setTip={setTip} hoveredPoint={hoveredPoint} />
-      <HighlightedText label="Revised plan" text={planText} points={planAll} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
+      <HighlightedText label="Revised trace" text={traceText} points={traceAll} located={lintTrace} setTip={setTip} hoveredPoint={hoveredPoint} />
+      <HighlightedText label="Revised plan" text={planText} points={planAll} located={lintPlan} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
 
       {(tracePoints.length + planPoints.length) > 0 && (
         <div className="pt-list">
@@ -606,6 +638,24 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar,
       ) : (a.major_risks || a.minor_flags) ? (
         <div className="note" style={{ marginTop: 10 }}>✓ No mechanical grammar issues found.</div>
       ) : null}
+
+      {/* SOP writing-standard violations — deterministic, not AI */}
+      {lint && lint.length > 0 && (
+        <details className="expander" style={{ marginTop: 10 }} open>
+          <summary><span className="chev">▸</span> SOP writing standards ({lint.length}) <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>— rule-based, not AI</span></summary>
+          <div className="ebody">
+            {lint.map((e, i) => (
+              <div className="gfix" key={i}>
+                <span className="gfix-where">{e.where}</span>
+                <span className="sop-kind">{e.kind}</span>
+                <span className="g-orig">{e.original}</span>
+                <span className="g-arrow">→</span>
+                <span className="sop-fix">{e.fix}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       <TrackedDiff label="Trace diff (pre-seed → revised)" before={preTrace} after={traceText} />
       <TrackedDiff label="Plan diff (pre-seed → revised)" before={prePlan} after={planText} />

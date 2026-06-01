@@ -5,6 +5,7 @@ export default function Admin() {
   const [key, setKey] = useState("");
   const [authed, setAuthed] = useState(false);
   const [rows, setRows] = useState([]);
+  const [questions, setQuestions] = useState([]);
   const [sel, setSel] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -15,9 +16,27 @@ export default function Admin() {
       const r = await fetch("/api/list?key=" + encodeURIComponent(k));
       const data = await r.json();
       if (!r.ok) { setError(data.error || "Failed"); setAuthed(false); }
-      else { setRows(data.rows || []); setAuthed(true); }
+      else { setRows(data.rows || []); setAuthed(true); loadQuestions(k); }
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
+  }
+
+  async function loadQuestions(k) {
+    try {
+      const r = await fetch("/api/questions?pw=" + encodeURIComponent(k));
+      const data = await r.json();
+      if (r.ok) setQuestions(data.questions || []);
+    } catch {}
+  }
+
+  async function resolveQuestion(id, resolved) {
+    try {
+      await fetch("/api/questions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, resolved, password: key }),
+      });
+      setQuestions((qs) => qs.map((q) => (q.id === id ? { ...q, resolved } : q)));
+    } catch {}
   }
 
   function computeTaskerStats(rows) {
@@ -131,6 +150,25 @@ export default function Admin() {
       </header>
       <div className="wrap" style={{ marginTop: 20 }}>
         {error && <div className="banner-err">{error}</div>}
+
+        <div style={{ marginBottom: 18 }}>
+          <div className="block-head" style={{ marginBottom: 10 }}>▸ Open questions from the SOP assistant ({questions.filter((q) => !q.resolved).length} unresolved)</div>
+          {questions.length === 0 ? (
+            <div className="oq-empty">No questions logged yet. When the assistant can't answer something from the canonical doc, it appears here for the next sync.</div>
+          ) : (
+            <div className="oq-list">
+              {questions.map((qq) => (
+                <div className={"oq-row" + (qq.resolved ? " done" : "")} key={qq.id}>
+                  <label className="oq-check"><input type="checkbox" checked={qq.resolved} onChange={(e) => resolveQuestion(qq.id, e.target.checked)} /></label>
+                  <div className="oq-main">
+                    <div className="oq-q">{qq.question}</div>
+                    <div className="oq-meta">{qq.asker_name ? qq.asker_name + " · " : ""}{new Date(qq.created_at).toLocaleString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {rows.length > 0 && (
           <div style={{ marginBottom: 8 }}>
