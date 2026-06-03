@@ -1,6 +1,11 @@
 # Rubric QC Tool — version log
 
-## v3.8.0  (current) — explicit grammar, prefilled suggestions, popup + fixes
+## v3.8.1  (current)
+- IN-PLACE EDIT POPUP now has a "✕ Disagree" button for rubric-issue highlights — captured exactly like Disagree in the Rubric-related issues block (fades the issue, clears its highlight, suppresses it on re-check, logs to the feedback table). Grammar/SOP popups keep Apply-fix/Save/Cancel (they're deterministic, not findings to disagree with).
+- MINIMAL INPUT box fix: the box now shows ONLY the camera token(s) (e.g. SVC-F, Temporal), even when the model returns a whole sentence — the descriptive text moves into the (+) "why". Tokens are extracted robustly (SVC-F/FL/FR/SL/SR/RL/RR/R + Temporal).
+- No new DB migration.
+
+## v3.8.0
 - GRAMMAR NOW SAYS WHERE: every grammar flag includes an explicit location note (e.g. "extra space between 'vehicles' and 'partially'", "missing comma after 'stalled'"). Spacing errors render whitespace VISIBLY (spaces shown as ·) so you can actually see the doubled space — in both the list and the click popup.
 - CLICK A HIGHLIGHT → SUGGESTION PREFILLED: the edit box now opens pre-filled with a suggested correction (exact fix for grammar/SOP; a suggested rewrite for rubric issues, clearly marked "verify against the video before accepting"). Hit Save, or tweak first. No authoring from scratch.
 - POPUP NO LONGER CLIPS: the edit popup measures itself and stays fully on-screen — clamps left/right and flips above the highlight when near the bottom.

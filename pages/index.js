@@ -399,9 +399,9 @@ export default function Home() {
                   </div>
                   <div className="split-right">
                     <div className="split-right-head">Your revised text — edit here</div>
-                    <EditPanel label="Trace" field="trace" value={revisedTrace} onChange={setRevisedTrace} onGrammarFix={applyGrammarFix}
+                    <EditPanel label="Trace" field="trace" value={revisedTrace} onChange={setRevisedTrace} onGrammarFix={applyGrammarFix} onDisagree={onDisagree}
                       points={[...tracePoints, ...gTracePts]} located={lintLocated(lintNow, "trace")} setTip={setTip} hoveredPoint={tip?.p?._point} />
-                    <EditPanel label="Plan" field="plan" value={revisedPlan} onChange={setRevisedPlan} onGrammarFix={applyGrammarFix}
+                    <EditPanel label="Plan" field="plan" value={revisedPlan} onChange={setRevisedPlan} onGrammarFix={applyGrammarFix} onDisagree={onDisagree}
                       points={[...planPoints, ...gPlanPts]} located={lintLocated(lintNow, "plan")} setTip={setTip} hoveredPoint={tip?.p?._point} />
                   </div>
                 </div>
@@ -614,7 +614,7 @@ function HighlightedText({ label, text, points, located = [], setTip, hoveredPoi
 
 // Right-pane editor (Route A): highlighted view stays; click any highlight to edit THAT span
 // in an anchored popup, prefilled with a suggested correction. Grammar = one-click fix.
-function EditPanel({ label, field, value, onChange, onGrammarFix, points, located, setTip, hoveredPoint }) {
+function EditPanel({ label, field, value, onChange, onGrammarFix, onDisagree, points, located, setTip, hoveredPoint }) {
   const [free, setFree] = useState(false);
   const [edit, setEdit] = useState(null); // {start,end,p,rect,draft}
 
@@ -668,7 +668,9 @@ function EditPanel({ label, field, value, onChange, onGrammarFix, points, locate
 
       {edit && (<>
         <div className="ep-pop-back" onClick={() => setEdit(null)} />
-        <SpanEditor edit={edit} setEdit={setEdit} onSave={saveEdit} onFix={applyGrammar} onCancel={() => setEdit(null)} />
+        <SpanEditor edit={edit} setEdit={setEdit} onSave={saveEdit} onFix={applyGrammar}
+          onDisagree={onDisagree ? (p) => { onDisagree(p); setEdit(null); } : null}
+          onCancel={() => setEdit(null)} />
       </>)}
     </div>
   );
@@ -680,7 +682,7 @@ function showWS(s) {
   return String(s).replace(/ /g, "·").replace(/\t/g, "⇥");
 }
 
-function SpanEditor({ edit, setEdit, onSave, onFix, onCancel }) {
+function SpanEditor({ edit, setEdit, onSave, onFix, onDisagree, onCancel }) {
   const p = edit.p;
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: edit.rect.left, top: edit.rect.bottom + 8 });
@@ -723,7 +725,8 @@ function SpanEditor({ edit, setEdit, onSave, onFix, onCancel }) {
       <div className="se-actions">
         {isGrammar && <button className="ib-fixed" onClick={onFix}>✓ Apply fix</button>}
         <button className="ib-agree" onClick={onSave}>✓ Save edit</button>
-        <button className="ib-disagree" onClick={onCancel}>Cancel</button>
+        {!isGrammar && !isLint && onDisagree && <button className="ib-disagree" onClick={() => onDisagree(p)}>✕ Disagree</button>}
+        <button className="ib-cancel" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
@@ -863,8 +866,14 @@ function CameraResult({ a }) {
 
 function MinimalInputBoxes({ lg }) {
   const [open, setOpen] = useState({}); // key -> bool
-  const cams = lg.cameras_text_implies?.length ? lg.cameras_text_implies : ["SVC-F"];
-  const items = [...cams.map((c) => ({ key: c, label: c, why: lg.camera_selection_note || "Forward view covers the driving decision." }))];
+  const CAM_RE = /SVC-(?:F|FL|FR|SL|SR|RL|RR|R)\b/gi;
+  const raw = lg.cameras_text_implies || [];
+  // pull only real camera tokens out of whatever the model returned (it sometimes returns a sentence)
+  const found = [];
+  raw.forEach((s) => { const m = String(s).match(CAM_RE); if (m) m.forEach((c) => found.push(c.toUpperCase())); });
+  const cams = found.length ? [...new Set(found)] : ["SVC-F"];
+  const note = lg.camera_selection_note || (raw.length && !found.length ? raw.join(" ") : "Forward view covers the driving decision.");
+  const items = [...cams.map((c) => ({ key: c, label: c, why: note }))];
   if (lg.temporal_needed === "yes") items.push({ key: "Temporal", label: "Temporal", why: lg.temporal_reason || "Object movement across frames matters here." });
   return (
     <div>

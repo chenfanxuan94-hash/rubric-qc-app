@@ -621,3 +621,7 @@ textarea.locked{background:var(--bg);color:var(--muted);cursor:not-allowed;}
 .mi-plus{width:30px;height:30px;border-radius:8px;border:1px solid var(--rule-dark);background:#fff;color:var(--ink);font-size:18px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
 .mi-plus:hover{border-color:var(--teal);color:var(--teal);}
 .mi-why{flex-basis:100%;font-size:14px;color:var(--ink);line-height:1.55;background:var(--bg);border-radius:8px;padding:10px 13px;margin-top:2px;}
+
+/* v3.8.1 — cancel button in span editor (Disagree now uses ib-disagree) */
+.ib-cancel{background:#fff;color:var(--muted);border:1px solid var(--rule-dark)!important;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans);}
+.ib-cancel:hover{color:var(--ink);}
