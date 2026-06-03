@@ -1,6 +1,15 @@
 # Rubric QC Tool — version log
 
-## v3.5.0  (current) — results redesign: clearer, interactive, less overwhelming
+## v3.6.0  (current) — side-by-side working view + consistency block
+- NEW SIDE-BY-SIDE WORKING VIEW: a big "Show revised text →" button. Click it and the findings shift left while your revised trace + plan open on the right, using the previously-wasted side margins. Scroll the findings on the left; the text stays in view on the right (sticky, its own scroll). Click "← Stack view" to exit. On narrow screens it falls back to stacked.
+  - The right panel is now where you EDIT (per Q1): each of trace/plan toggles between **highlighted (read)** and **editable (textarea)** — read it with colors, click ✎ Edit to type, click ✓ View highlights to see them update. Highlights clear in real time as you dismiss issues.
+  - Your top "revised" boxes LOCK (read-only reference) while the working view is open, so there's one place to edit.
+- NEW CONSISTENCY BLOCK: its own block showing GREEN "Internally consistent — no issues" or RED "Consistency issues found". Expand it to see the headline, a foldable "Why / full explanation" sub-block, and the list of inconsistencies (within trace, within plan, and trace↔plan) as actionable rows. The old duplicate consistency box is gone.
+- "Issues to resolve" → renamed **"Rubric-related issues to review and resolve"** (non-consistency rubric issues only; consistency issues live in the block above).
+- TYPOGRAPHY: bigger "What changed" (label + text). **Minimal Input** shown as a big word; the recommended cameras/Temporal are in a distinct color, the explanation in black.
+- No new DB migration. Feedback loop, SOP linter, grammar sweep, and the canonical assistant all unchanged.
+
+## v3.5.0
 All information is preserved — most of it is now collapsed behind clear "+" expanders with darker, larger text. New results order, top to bottom:
 1. **What changed** — one concise line at the very top.
 2. **Big X MAJOR · X MINOR** counts (no eyebrow, no "to verify" clutter).

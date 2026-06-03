@@ -54,6 +54,7 @@ export default function Home() {
   const [camFading, setCamFading] = useState({});
   const [pendingAddressed, setPendingAddressed] = useState(null); // issueKey awaiting "no change?" confirm
   const [resultText, setResultText] = useState({ trace: "", plan: "" }); // text at result time
+  const [splitMode, setSplitMode] = useState(false); // side-by-side working view
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -200,16 +201,25 @@ export default function Home() {
     setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
     setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
     setRevisions([]); setPrevFindings(null); setShowHistory(false); setUnsavedModal(false);
-    setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" });
+    setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" }); setSplitMode(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const allPoints = full.res ? assignPoints(full.res) : [];
-  // stable key per issue; attach _key and _fading
-  allPoints.forEach((p) => { p._key = (p.sev || "x") + "|" + (p.code || "") + "|" + (p.where || "") + "|" + (p.fix || p.title || ""); });
+  // stable key per issue; attach _key, _consistency
+  allPoints.forEach((p) => {
+    p._key = (p.sev || "x") + "|" + (p.code || "") + "|" + (p.where || "") + "|" + (p.fix || p.title || "");
+    const t = (p.type || "").toLowerCase();
+    p._consistency = /contradict|mismatch/.test(t) || p.code === "M3";
+  });
   const points = allPoints.filter((p) => !dismissed[p._key]); // active (not agreed/disagreed)
   const tracePoints = points.filter((p) => (p.where || "trace") === "trace");
   const planPoints = points.filter((p) => p.where === "plan");
+  const consistencyPoints = points.filter((p) => p._consistency);
+  const rubricPoints = points.filter((p) => !p._consistency);
+  const lintNow = lintAll(revisedTrace, revisedPlan);
+  const gTracePts = grammarPoints(gram.res).filter((p) => p.where !== "plan");
+  const gPlanPts = grammarPoints(gram.res).filter((p) => p.where === "plan");
 
   // camera-check gate
   const camItems = (full.res && Array.isArray(full.res.self_review_checklist)) ? full.res.self_review_checklist : [];
@@ -240,7 +250,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="wrap">
+      <div className={"wrap" + (splitMode ? " wide" : "")}>
         <div className="disclaimer">
           <span className="ico">⚠️</span>
           <p>This reviews your <strong>text</strong> — consistency, trace↔plan agreement, writing, and the rubric. Always confirm the scene against the video; a clean text check isn't a guarantee on its own.</p>
@@ -293,16 +303,16 @@ export default function Home() {
           <div className="two-col" style={{ marginBottom: 16 }}>
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Pre-seed trace (optional)</label>
               <textarea className={revisions.length > 0 ? "locked" : ""} readOnly={revisions.length > 0} value={preseedTrace} onChange={(e) => setPreseedTrace(e.target.value)} placeholder="Paste the original pre-seed trace (optional)..." /></div>
-            <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised trace</label>
-              <textarea value={revisedTrace} onChange={(e) => setRevisedTrace(e.target.value)} placeholder="Paste your edited trace..." /></div>
+            <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised trace{splitMode ? " · editing in side panel →" : ""}</label>
+              <textarea value={revisedTrace} onChange={(e) => setRevisedTrace(e.target.value)} placeholder="Paste your edited trace..." readOnly={splitMode} className={splitMode ? "locked" : ""} /></div>
           </div>
 
           <div className="field"><label>Driving Plan</label></div>
           <div className="two-col">
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Pre-seed plan (optional)</label>
               <textarea className={revisions.length > 0 ? "locked" : ""} readOnly={revisions.length > 0} value={preseedPlan} onChange={(e) => setPreseedPlan(e.target.value)} placeholder="Paste the original pre-seed plan (optional)..." /></div>
-            <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised plan</label>
-              <textarea value={revisedPlan} onChange={(e) => setRevisedPlan(e.target.value)} placeholder="Paste your edited plan..." /></div>
+            <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised plan{splitMode ? " · editing in side panel →" : ""}</label>
+              <textarea value={revisedPlan} onChange={(e) => setRevisedPlan(e.target.value)} placeholder="Paste your edited plan..." readOnly={splitMode} className={splitMode ? "locked" : ""} /></div>
           </div>
 
           {/* Minimal Input — part of the same combined evaluation */}
@@ -383,19 +393,46 @@ export default function Home() {
           {full.res && (
             <div style={{ marginTop: 16 }}>
               {full.notices.length > 0 && (
-                <div className="notice-box">
-                  {full.notices.map((n, i) => <div key={i}>• {n}</div>)}
+                <div className="notice-box">{full.notices.map((n, i) => <div key={i}>• {n}</div>)}</div>
+              )}
+              {splitMode ? (
+                <div className="split-wrap">
+                  <div className="split-left">
+                    <button className="split-exit" onClick={() => setSplitMode(false)}>← Stack view</button>
+                    <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
+                      tracePoints={tracePoints} planPoints={planPoints} points={points}
+                      consistencyPoints={consistencyPoints} rubricPoints={rubricPoints} inSplit={true}
+                      grammar={gram.res} grammarErr={gram.err} lint={lintNow}
+                      traceText={revisedTrace} planText={revisedPlan}
+                      preTrace={preseedTrace} prePlan={preseedPlan}
+                      fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
+                      pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
+                      camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
+                  </div>
+                  <div className="split-right">
+                    <div className="split-right-head">Your revised text — edit here</div>
+                    <EditPanel label="Trace" value={revisedTrace} onChange={setRevisedTrace}
+                      points={[...tracePoints, ...gTracePts]} located={lintLocated(lintNow, "trace")} setTip={setTip} hoveredPoint={tip?.p?._point} />
+                    <EditPanel label="Plan" value={revisedPlan} onChange={setRevisedPlan}
+                      points={[...planPoints, ...gPlanPts]} located={lintLocated(lintNow, "plan")} setTip={setTip} hoveredPoint={tip?.p?._point} />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="show-text-bar">
+                    <button className="show-text-btn" onClick={() => setSplitMode(true)}>Show revised text →</button>
+                  </div>
+                  <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
+                    tracePoints={tracePoints} planPoints={planPoints} points={points}
+                    consistencyPoints={consistencyPoints} rubricPoints={rubricPoints} inSplit={false}
+                    grammar={gram.res} grammarErr={gram.err} lint={lintNow}
+                    traceText={revisedTrace} planText={revisedPlan}
+                    preTrace={preseedTrace} prePlan={preseedPlan}
+                    fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
+                    pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
+                    camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
                 </div>
               )}
-              <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
-                tracePoints={tracePoints} planPoints={planPoints} points={points}
-                grammar={gram.res} grammarErr={gram.err}
-                lint={lintAll(revisedTrace, revisedPlan)}
-                traceText={revisedTrace} planText={revisedPlan}
-                preTrace={preseedTrace} prePlan={preseedPlan}
-                fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
-                pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
-                camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
             </div>
           )}
         </div>
@@ -525,13 +562,13 @@ function TipCard({ tip }) {
   );
 }
 
-function HighlightedText({ label, text, points, located = [], setTip, hoveredPoint, emptyMsg }) {
-  if (!text) return emptyMsg ? <div className="hl-panel"><div className="hl-head">{label}</div><div className="hl-body" style={{ color: "var(--muted)", fontStyle: "italic" }}>{emptyMsg}</div></div> : null;
+function HighlightedText({ label, text, points, located = [], setTip, hoveredPoint, emptyMsg, bare }) {
+  if (!text) return emptyMsg ? <div className="hl-panel"><div className="hl-body" style={{ color: "var(--muted)", fontStyle: "italic" }}>{emptyMsg}</div></div> : null;
   const segs = segmentize(text, points, located);
   const anyMark = segs.some((s) => s.mark);
   return (
-    <div className="hl-panel">
-      <div className="hl-head">{label}{!anyMark && points.length > 0 ? " — couldn't pin spans; see list below" : ""}</div>
+    <div className={"hl-panel" + (bare ? " bare" : "")}>
+      {!bare && <div className="hl-head">{label}{!anyMark && points.length > 0 ? " — couldn't pin spans; see list below" : ""}</div>}
       <div className="hl-body">
         {segs.map((s, i) => s.mark
           ? <mark key={i} className={"hl" + (s.mark.p._grammar ? " hl-gram" : "") + (s.mark.p._lint ? " hl-lint" : "") + (hoveredPoint === s.mark.p._point ? " linked" : "")}
@@ -544,6 +581,26 @@ function HighlightedText({ label, text, points, located = [], setTip, hoveredPoi
             </mark>
           : <span key={i}>{s.text}</span>)}
       </div>
+    </div>
+  );
+}
+
+// Right-pane editor: toggles between highlighted (read) and editable (textarea) per field.
+function EditPanel({ label, value, onChange, points, located, setTip, hoveredPoint }) {
+  const [mode, setMode] = useState("read");
+  return (
+    <div className="edit-panel">
+      <div className="ep-head">
+        <span className="ep-label">{label}</span>
+        <button className="ep-toggle" onClick={() => setMode(mode === "read" ? "edit" : "read")}>
+          {mode === "read" ? "✎ Edit" : "✓ View highlights"}
+        </button>
+      </div>
+      {mode === "read"
+        ? (value
+            ? <HighlightedText label="" text={value} points={points} located={located} setTip={setTip} hoveredPoint={hoveredPoint} bare />
+            : <div className="ep-empty">No text yet — click Edit to add it.</div>)
+        : <textarea className="ep-textarea" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Edit your revised text here…" />}
     </div>
   );
 }
@@ -680,7 +737,7 @@ function CameraResult({ a }) {
   );
 }
 
-function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan,
+function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, consistencyPoints, rubricPoints, inSplit, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan,
   fading, onAddressed, onDisagree, pendingAddressed, confirmAddressedAnyway, convertToDisagree,
   camItems, camCleared, camFading, clearCam }) {
   const gPoints = grammarPoints(grammar);
@@ -690,56 +747,71 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
   const lintPlan = lintLocated(lint, "plan");
   const traceAll = [...tracePoints, ...gTrace];
   const planAll = [...planPoints, ...gPlan];
-  const orderedIssues = [...points].sort((x, y) => x._point - y._point);
   const consist = a.trace_plan_consistency;
-  const consistText = consist && consist.consistent === false ? consist.detail : "";
+  const consistDetail = consist && consist.consistent === false ? consist.detail : "";
+  const consistIssues = [...(consistencyPoints || [])].sort((x, y) => x._point - y._point);
+  const rubricIssues = [...(rubricPoints || [])].sort((x, y) => x._point - y._point);
+  const hasConsistencyProblem = consistIssues.length > 0 || (consist && consist.consistent === false);
+  const issueRow = (p) => (
+    <IssueRow key={p._key} p={p} fading={!!fading[p._key]}
+      onAddressed={onAddressed} onDisagree={onDisagree}
+      pending={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree} />
+  );
 
   return (
     <div className="result">
-      {/* 1. What changed — top, concise, dark */}
+      {/* 1. What changed — bigger */}
       {a.change_summary && (
-        <div className="r-changed"><span className="r-changed-k">What changed</span> {a.change_summary}</div>
+        <div className="r-changed"><div className="r-changed-k">What changed</div><div className="r-changed-t">{a.change_summary}</div></div>
       )}
 
       {/* 2. Big counts */}
       <BigCounts a={a} />
 
-      {/* 3. One-line verdict — big, plain */}
-      {a.headline && <div className="r-headline">{a.headline}</div>}
+      {/* 3. Consistency block — green/red, headline inside, expand for issues + explanation */}
+      <details className={"consist-block " + (hasConsistencyProblem ? "bad" : "ok")} open={hasConsistencyProblem}>
+        <summary>
+          <span className="cb-pill">{hasConsistencyProblem ? "⚑ Consistency issues found" : "✓ Internally consistent — no issues"}</span>
+          <span className="cb-expand">{(consistIssues.length || a.summary || consistDetail) ? "details" : ""}</span>
+        </summary>
+        <div className="cb-body">
+          {a.headline && <div className="cb-headline">{a.headline}</div>}
+          {(a.summary || consistDetail) && (
+            <details className="cb-why">
+              <summary><span className="plus">+</span> Why / full explanation</summary>
+              <div className="cb-why-body">
+                {a.summary && <p>{a.summary}</p>}
+                {consistDetail && <p><b>Trace ↔ Plan:</b> {consistDetail}</p>}
+                {a.skip_check && a.skip_check.decision_coherent === false && <p><b>Skip decision:</b> {a.skip_check.note}</p>}
+              </div>
+            </details>
+          )}
+          {consistIssues.length > 0 && (
+            <div className="cb-issues">
+              <div className="cb-issues-h">Inconsistencies to resolve ({consistIssues.length}) <span className="muted">— within trace, within plan, and trace ↔ plan</span></div>
+              {consistIssues.map(issueRow)}
+            </div>
+          )}
+        </div>
+      </details>
 
-      {/* 4. Details (the fuller reasoning) behind a + ; consistency folded in here (no duplicate box) */}
-      {(a.summary || consistText) && (
-        <details className="r-more">
-          <summary><span className="plus">+</span> Why / full explanation</summary>
-          <div className="r-more-body">
-            {a.summary && <p>{a.summary}</p>}
-            {consistText && <p><b>Trace ↔ Plan:</b> {consistText}</p>}
-            {a.skip_check && a.skip_check.decision_coherent === false && <p><b>Skip decision:</b> {a.skip_check.note}</p>}
-          </div>
-        </details>
-      )}
-
-      {/* 5. Issues — detailed list with Agree/Disagree */}
-      {orderedIssues.length > 0 ? (
+      {/* 4. Rubric-related issues (non-consistency) */}
+      {rubricIssues.length > 0 ? (
         <details className="r-more" open>
-          <summary><span className="plus">+</span> Issues to resolve ({orderedIssues.length})</summary>
+          <summary><span className="plus">+</span> Rubric-related issues to review and resolve ({rubricIssues.length})</summary>
           <div className="r-more-body">
-            <div className="issue-hint">Mark each <b>Addressed</b> once you fix it, or <b>Disagree</b> if you think it's wrong — it'll clear from here and from your text below.</div>
-            {orderedIssues.map((p) => (
-              <IssueRow key={p._key} p={p} fading={!!fading[p._key]}
-                onAddressed={onAddressed} onDisagree={onDisagree}
-                pending={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree} />
-            ))}
+            <div className="issue-hint">Mark each <b>Addressed</b> once you fix it, or <b>Disagree</b> if you think it's wrong — it clears from here and from your text.</div>
+            {rubricIssues.map(issueRow)}
           </div>
         </details>
       ) : (
-        <div className="r-allclear">✓ All flagged issues handled.</div>
+        <div className="r-allclear">✓ No other rubric issues.</div>
       )}
 
-      {/* 6. Camera checks — mandatory gate */}
+      {/* 5. Camera checks — mandatory gate */}
       <CameraGate items={camItems} cleared={camCleared} fading={camFading} clearCam={clearCam} />
 
-      {/* 7. Label guidance — recommendation up front, explanation behind + */}
+      {/* 6. Minimal Input — big word, recommendation colored, explanation black */}
       {a.label_guidance && (
         <div className="r-guide">
           <div className="r-guide-line">
@@ -757,21 +829,23 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
         </div>
       )}
 
-      {/* 8–11. Everything else, collapsed by default */}
+      {/* 7. Everything else, collapsed by default */}
       <div className="r-extras">
-        <details className="r-more compact">
-          <summary><span className="plus">+</span> Your revised text (highlighted)</summary>
-          <div className="r-more-body">
-            <div className="legend">
-              <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
-              <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
-              <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
-              <span><i className="lg gram" style={{ borderColor: SOPLINT_COLOR.bd }} /> SOP rule</span>
+        {!inSplit && (
+          <details className="r-more compact">
+            <summary><span className="plus">+</span> Your revised text (highlighted)</summary>
+            <div className="r-more-body">
+              <div className="legend">
+                <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
+                <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
+                <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
+                <span><i className="lg gram" style={{ borderColor: SOPLINT_COLOR.bd }} /> SOP rule</span>
+              </div>
+              <HighlightedText label="Revised trace" text={traceText} points={traceAll} located={lintTrace} setTip={setTip} hoveredPoint={hoveredPoint} />
+              <HighlightedText label="Revised plan" text={planText} points={planAll} located={lintPlan} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
             </div>
-            <HighlightedText label="Revised trace" text={traceText} points={traceAll} located={lintTrace} setTip={setTip} hoveredPoint={hoveredPoint} />
-            <HighlightedText label="Revised plan" text={planText} points={planAll} located={lintPlan} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
-          </div>
-        </details>
+          </details>
+        )}
 
         {!grammarErr && gPoints.length > 0 && (
           <details className="r-more compact">
