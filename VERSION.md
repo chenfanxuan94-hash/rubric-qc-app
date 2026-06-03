@@ -1,6 +1,10 @@
 # Rubric QC Tool — version log
 
-## v3.8.1  (current)
+## v3.8.2  (current)
+- FIXED: the in-place edit popup no longer gets cut off on the right (or any edge). It's now rendered in a portal to <body>, so no scrolling/overflow ancestor can clip it, and it's clamped to the viewport (horizontal clamp at render time using its known width, plus a measured vertical flip above the highlight when near the bottom). If it's ever taller than the screen it scrolls internally.
+- No new DB migration.
+
+## v3.8.1
 - IN-PLACE EDIT POPUP now has a "✕ Disagree" button for rubric-issue highlights — captured exactly like Disagree in the Rubric-related issues block (fades the issue, clears its highlight, suppresses it on re-check, logs to the feedback table). Grammar/SOP popups keep Apply-fix/Save/Cancel (they're deterministic, not findings to disagree with).
 - MINIMAL INPUT box fix: the box now shows ONLY the camera token(s) (e.g. SVC-F, Temporal), even when the model returns a whole sentence — the descriptive text moves into the (+) "why". Tokens are extracted robustly (SVC-F/FL/FR/SL/SR/RL/RR/R + Temporal).
 - No new DB migration.

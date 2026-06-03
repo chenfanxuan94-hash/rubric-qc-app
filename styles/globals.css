@@ -625,3 +625,6 @@ textarea.locked{background:var(--bg);color:var(--muted);cursor:not-allowed;}
 /* v3.8.1 — cancel button in span editor (Disagree now uses ib-disagree) */
 .ib-cancel{background:#fff;color:var(--muted);border:1px solid var(--rule-dark)!important;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans);}
 .ib-cancel:hover{color:var(--ink);}
+
+/* v3.8.2 — popup scrolls if taller than viewport (portal to body avoids ancestor clipping) */
+.span-editor{overflow:auto;}

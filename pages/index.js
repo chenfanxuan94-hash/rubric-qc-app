@@ -1,5 +1,6 @@
-// pages/index.js — v3.8.0
+// pages/index.js — v3.8.2
 import { useState, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { SKIP_QUESTIONS } from "../lib/rubricKnowledge.js";
 import { lintAll } from "../lib/sopLint.js";
 import ChatAssistant from "../components/ChatAssistant.js";
@@ -666,12 +667,11 @@ function EditPanel({ label, field, value, onChange, onGrammarFix, onDisagree, po
         <div className="ep-empty">No text yet — click “Edit freely” to add it.</div>
       )}
 
-      {edit && (<>
-        <div className="ep-pop-back" onClick={() => setEdit(null)} />
+      {edit && (
         <SpanEditor edit={edit} setEdit={setEdit} onSave={saveEdit} onFix={applyGrammar}
           onDisagree={onDisagree ? (p) => { onDisagree(p); setEdit(null); } : null}
           onCancel={() => setEdit(null)} />
-      </>)}
+      )}
     </div>
   );
 }
@@ -685,51 +685,63 @@ function showWS(s) {
 function SpanEditor({ edit, setEdit, onSave, onFix, onDisagree, onCancel }) {
   const p = edit.p;
   const ref = useRef(null);
-  const [pos, setPos] = useState({ left: edit.rect.left, top: edit.rect.bottom + 8 });
+  const W = 360;
+  // render-time horizontal clamp (no measurement needed — width is known)
+  const vw = (typeof window !== "undefined") ? window.innerWidth : 1200;
+  const vh = (typeof window !== "undefined") ? window.innerHeight : 800;
+  let initLeft = edit.rect.left;
+  if (initLeft + W > vw - 12) initLeft = vw - W - 12;
+  if (initLeft < 12) initLeft = 12;
+  const [pos, setPos] = useState({ left: initLeft, top: edit.rect.bottom + 8 });
+
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return;
     const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth, vh = window.innerHeight, M = 12;
-    let left = edit.rect.left, top = edit.rect.bottom + 8;
+    const M = 12;
+    let left = edit.rect.left;
     if (left + rect.width > vw - M) left = vw - rect.width - M;
     if (left < M) left = M;
-    if (top + rect.height > vh - M) { // flip above the highlight
-      top = edit.rect.top - rect.height - 8;
-      if (top < M) top = M;
-    }
+    let top = edit.rect.bottom + 8;
+    if (top + rect.height > vh - M) { top = edit.rect.top - rect.height - 8; if (top < M) top = M; }
     setPos({ left, top });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit]);
 
   const isGrammar = p._grammar, isLint = p._lint;
   const isSpacing = isGrammar && (p.gtype === "spacing");
-  return (
-    <div className="span-editor" ref={ref} style={{ left: pos.left, top: pos.top, borderColor: p._color.bd }}>
-      <div className="se-head">
-        {isGrammar ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>grammar</span><span className="pt-code">{p.gtype || "fix"}</span></>
-          : isLint ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>SOP rule</span><span className="pt-code">{p.kind}</span></>
-          : <><span className={"pt-sev " + p.sev}>{p.sev}</span><span className="pt-code">{p.code}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span></>}
+  const node = (
+    <>
+      <div className="ep-pop-back" onClick={onCancel} />
+      <div className="span-editor" ref={ref} style={{ left: pos.left, top: pos.top, borderColor: p._color.bd, maxHeight: vh - 24 }}>
+        <div className="se-head">
+          {isGrammar ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>grammar</span><span className="pt-code">{p.gtype || "fix"}</span></>
+            : isLint ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>SOP rule</span><span className="pt-code">{p.kind}</span></>
+            : <><span className={"pt-sev " + p.sev}>{p.sev}</span><span className="pt-code">{p.code}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span></>}
+        </div>
+        {isGrammar && (<>
+          {p.note && <div className="se-note">📍 {p.note}</div>}
+          <div className="se-fix"><span className="g-orig">{isSpacing ? showWS(p.original) : p.original}</span> → <span className="g-sug">{isSpacing ? showWS(p.suggestion) : p.suggestion}</span></div>
+        </>)}
+        {isLint && <div className="se-why">{p.fix}{p.rule ? <span className="muted"> · {p.rule}</span> : null}</div>}
+        {!isGrammar && !isLint && (<>
+          <div className="se-fix">{p.fix || p.title}</div>
+          {p.why && <div className="se-why"><b>Why:</b> {p.why}</div>}
+          {p.suggestion != null && <div className="se-sugtag">✎ Suggested rewrite below — verify against the video before accepting.</div>}
+        </>)}
+        <textarea className="se-input" value={edit.draft} autoFocus
+          onChange={(e) => setEdit({ ...edit, draft: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(); if (e.key === "Escape") onCancel(); }} />
+        <div className="se-actions">
+          {isGrammar && <button className="ib-fixed" onClick={onFix}>✓ Apply fix</button>}
+          <button className="ib-agree" onClick={onSave}>✓ Save edit</button>
+          {!isGrammar && !isLint && onDisagree && <button className="ib-disagree" onClick={() => onDisagree(p)}>✕ Disagree</button>}
+          <button className="ib-cancel" onClick={onCancel}>Cancel</button>
+        </div>
       </div>
-      {isGrammar && (<>
-        {p.note && <div className="se-note">📍 {p.note}</div>}
-        <div className="se-fix"><span className="g-orig">{isSpacing ? showWS(p.original) : p.original}</span> → <span className="g-sug">{isSpacing ? showWS(p.suggestion) : p.suggestion}</span></div>
-      </>)}
-      {isLint && <div className="se-why">{p.fix}{p.rule ? <span className="muted"> · {p.rule}</span> : null}</div>}
-      {!isGrammar && !isLint && (<>
-        <div className="se-fix">{p.fix || p.title}</div>
-        {p.why && <div className="se-why"><b>Why:</b> {p.why}</div>}
-        {p.suggestion != null && <div className="se-sugtag">✎ Suggested rewrite below — verify against the video before accepting.</div>}
-      </>)}
-      <textarea className="se-input" value={edit.draft} autoFocus
-        onChange={(e) => setEdit({ ...edit, draft: e.target.value })}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(); if (e.key === "Escape") onCancel(); }} />
-      <div className="se-actions">
-        {isGrammar && <button className="ib-fixed" onClick={onFix}>✓ Apply fix</button>}
-        <button className="ib-agree" onClick={onSave}>✓ Save edit</button>
-        {!isGrammar && !isLint && onDisagree && <button className="ib-disagree" onClick={() => onDisagree(p)}>✕ Disagree</button>}
-        <button className="ib-cancel" onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
+    </>
   );
+  if (typeof document === "undefined") return null;
+  return createPortal(node, document.body);
 }
 
 function IssueRow({ p, fading, onAddressed, onDisagree, pending, confirmAddressedAnyway, convertToDisagree }) {
