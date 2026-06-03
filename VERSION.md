@@ -1,6 +1,15 @@
 # Rubric QC Tool — version log
 
-## v3.6.0  (current) — side-by-side working view + consistency block
+## v3.7.0  (current) — in-place highlight editing, boxed Minimal Input, re-check moved
+- RE-CHECK MOVED: the "↻ Re-check (after edits)" button is now at the BOTTOM of the results, not above them. The first "Run check" stays with the inputs.
+- RESULTS IN THEIR OWN BLOCK: results (and the side-by-side working view) now render in a separate card, clearly detached from the pre-seed/revision inputs — not just divided by a line.
+- BIGGER TEXT in the revised trace/plan panels.
+- IN-PLACE HIGHLIGHT EDITING (right panel): the highlighted view stays put — click ANY highlight to edit just that span in a popup anchored at the highlight, so you always know which one you're editing. Grammar highlights get a one-click "✓ Apply fix" (deterministic). "Edit freely" drops to a full textarea for the rest of the text.
+- ONE-CLICK GRAMMAR FIX in the Grammar list too: each row has a "✓ fix" that applies original→suggestion directly.
+- MINIMAL INPUT redesigned: big label; each recommended item (SVC-F, Temporal, …) is a box the size of the camera-check buttons; click a box to reveal its "why".
+- No new DB migration.
+
+## v3.6.0
 - NEW SIDE-BY-SIDE WORKING VIEW: a big "Show revised text →" button. Click it and the findings shift left while your revised trace + plan open on the right, using the previously-wasted side margins. Scroll the findings on the left; the text stays in view on the right (sticky, its own scroll). Click "← Stack view" to exit. On narrow screens it falls back to stacked.
   - The right panel is now where you EDIT (per Q1): each of trace/plan toggles between **highlighted (read)** and **editable (textarea)** — read it with colors, click ✎ Edit to type, click ✓ View highlights to see them update. Highlights clear in real time as you dismiss issues.
   - Your top "revised" boxes LOCK (read-only reference) while the working view is open, so there's one place to edit.

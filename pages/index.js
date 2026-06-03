@@ -173,6 +173,16 @@ export default function Home() {
     setTimeout(() => setCamCleared((c) => ({ ...c, [idx]: how })), 420);
   }
 
+  // one-click grammar fix: replace first occurrence of `original` with `suggestion` in the right field
+  function applyGrammarFix(where, original, suggestion) {
+    if (!original) return;
+    if ((where || "trace") === "plan") {
+      setRevisedPlan((t) => t.replace(original, suggestion));
+    } else {
+      setRevisedTrace((t) => t.replace(original, suggestion));
+    }
+  }
+
   async function submit() {
     setSubmitErr(null);
     if (!taskId.trim()) { setSubmitErr("Task ID is required to submit."); return; }
@@ -331,49 +341,12 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="btns" style={{ marginTop: 16 }}>
-            <button className="primary" onClick={onRunClick} disabled={full.loading}>
-              {full.loading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : (revisions.length > 0 ? "↻ Re-check (after edits)" : "Run check")}
-            </button>
-            <button className="ghost" onClick={newTaskClick}>New task</button>
-          </div>
-
-          {revisions.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <span className="rev-pill">Revision {revisions.length}</span>
-              {revisions.length > 1 && (
-                <button className="linkbtn" onClick={() => setShowHistory(!showHistory)}>{showHistory ? "hide history ▴" : "view history ▸"}</button>
-              )}
-              {revisions.length > 1 && (
-                <span className="note" style={{ marginLeft: 8 }}>
-                  {revisions[0].majors}→{revisions[revisions.length - 1].majors} majors · {revisions[0].minors}→{revisions[revisions.length - 1].minors} minors
-                </span>
-              )}
-            </div>
-          )}
-          {showHistory && revisions.length > 1 && (
-            <div className="hist">
-              {revisions.map((rv, i) => (
-                <div className="hist-item" key={i}>
-                  <div className="hist-head">
-                    <b>Revision {i + 1}</b>
-                    <span className={"vb " + (rv.verdict || "ok")}>{(rv.verdict || "ok").replace("_", " ")}</span>
-                    <span className="note">{rv.majors} major · {rv.minors} minor</span>
-                    <span className="note" style={{ marginLeft: "auto" }}>{new Date(rv.at).toLocaleTimeString()}</span>
-                  </div>
-                  {i > 0 && (
-                    <details className="expander" style={{ marginTop: 6 }}>
-                      <summary><span className="chev">▸</span> What changed from Revision {i} → {i + 1}</summary>
-                      <div className="ebody">
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>TRACE</div>
-                        <TrackedBody before={revisions[i - 1].trace} after={rv.trace} />
-                        <div style={{ fontSize: 11, color: "var(--muted)", margin: "8px 0 4px", fontFamily: "var(--mono)" }}>PLAN</div>
-                        <TrackedBody before={revisions[i - 1].plan} after={rv.plan} />
-                      </div>
-                    </details>
-                  )}
-                </div>
-              ))}
+          {!full.res && (
+            <div className="btns" style={{ marginTop: 16 }}>
+              <button className="primary" onClick={onRunClick} disabled={full.loading}>
+                {full.loading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : "Run check"}
+              </button>
+              <button className="ghost" onClick={newTaskClick}>New task</button>
             </div>
           )}
 
@@ -389,9 +362,12 @@ export default function Home() {
 
           {full.err && <div className="banner-err" style={{ marginTop: 12 }}>{full.err}</div>}
           {full.raw && <pre className="json" style={{ marginTop: 12 }}>{full.raw}</pre>}
+        </div>
 
-          {full.res && (
-            <div style={{ marginTop: 16 }}>
+        {/* RESULTS — its own separate block */}
+        {full.res && (
+        <div className="card results-card">
+          {(() => null)()}
               {full.notices.length > 0 && (
                 <div className="notice-box">{full.notices.map((n, i) => <div key={i}>• {n}</div>)}</div>
               )}
@@ -407,7 +383,7 @@ export default function Home() {
                       preTrace={preseedTrace} prePlan={preseedPlan}
                       fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
                       pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
-                      camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
+                      camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
                   </div>
                   <div className="split-right">
                     <div className="split-right-head">Your revised text — edit here</div>
@@ -430,12 +406,51 @@ export default function Home() {
                     preTrace={preseedTrace} prePlan={preseedPlan}
                     fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
                     pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
-                    camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
+                    camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
+                </div>
+              )}
+
+              {/* Re-check + revisions — at the BOTTOM of the results */}
+              <div className="recheck-bar">
+                <button className="primary" onClick={onRunClick} disabled={full.loading}>
+                  {full.loading ? <><span className="spinner" />Re-checking…</> : "↻ Re-check (after edits)"}
+                </button>
+                <button className="ghost" onClick={newTaskClick}>New task</button>
+                {revisions.length > 0 && <span className="rev-pill">Revision {revisions.length}</span>}
+                {revisions.length > 1 && (
+                  <button className="linkbtn" onClick={() => setShowHistory(!showHistory)}>{showHistory ? "hide history ▴" : "view history ▸"}</button>
+                )}
+                {revisions.length > 1 && (
+                  <span className="note">{revisions[0].majors}→{revisions[revisions.length - 1].majors} major · {revisions[0].minors}→{revisions[revisions.length - 1].minors} minor</span>
+                )}
+              </div>
+              {showHistory && revisions.length > 1 && (
+                <div className="hist">
+                  {revisions.map((rv, i) => (
+                    <div className="hist-item" key={i}>
+                      <div className="hist-head">
+                        <b>Revision {i + 1}</b>
+                        <span className={"vb " + (rv.verdict || "ok")}>{(rv.verdict || "ok").replace("_", " ")}</span>
+                        <span className="note">{rv.majors} major · {rv.minors} minor</span>
+                        <span className="note" style={{ marginLeft: "auto" }}>{new Date(rv.at).toLocaleTimeString()}</span>
+                      </div>
+                      {i > 0 && (
+                        <details className="expander" style={{ marginTop: 6 }}>
+                          <summary><span className="chev">▸</span> What changed from Revision {i} → {i + 1}</summary>
+                          <div className="ebody">
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>TRACE</div>
+                            <TrackedBody before={revisions[i - 1].trace} after={rv.trace} />
+                            <div style={{ fontSize: 11, color: "var(--muted)", margin: "8px 0 4px", fontFamily: "var(--mono)" }}>PLAN</div>
+                            <TrackedBody before={revisions[i - 1].plan} after={rv.plan} />
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           )}
-        </div>
 
         {/* SUBMIT */}
         <div className="card" style={{ borderColor: "var(--ink)" }}>
@@ -585,22 +600,91 @@ function HighlightedText({ label, text, points, located = [], setTip, hoveredPoi
   );
 }
 
-// Right-pane editor: toggles between highlighted (read) and editable (textarea) per field.
+// Right-pane editor (Route A): highlighted view stays; click any highlight to edit THAT span
+// in an anchored popup (grammar gets one-click fix). "Edit freely" drops to a full textarea.
 function EditPanel({ label, value, onChange, points, located, setTip, hoveredPoint }) {
-  const [mode, setMode] = useState("read");
+  const [free, setFree] = useState(false);
+  const [edit, setEdit] = useState(null); // {start,end,p,x,y,draft}
+
+  function openEdit(mark, e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip && setTip(null);
+    setEdit({ start: mark.start, end: mark.end, p: mark.p, x: r.left, y: r.bottom, draft: value.slice(mark.start, mark.end) });
+  }
+  function saveEdit() {
+    if (!edit) return;
+    onChange(value.slice(0, edit.start) + edit.draft + value.slice(edit.end));
+    setEdit(null);
+  }
+  function applyGrammar() {
+    if (!edit) return;
+    onChange(value.slice(0, edit.start) + (edit.p.suggestion || "") + value.slice(edit.end));
+    setEdit(null);
+  }
+
+  const segs = segmentize(value, points, located);
+
   return (
     <div className="edit-panel">
       <div className="ep-head">
         <span className="ep-label">{label}</span>
-        <button className="ep-toggle" onClick={() => setMode(mode === "read" ? "edit" : "read")}>
-          {mode === "read" ? "✎ Edit" : "✓ View highlights"}
+        <button className="ep-toggle" onClick={() => { setEdit(null); setFree(!free); }}>
+          {free ? "✓ Done — show highlights" : "✎ Edit freely"}
         </button>
       </div>
-      {mode === "read"
-        ? (value
-            ? <HighlightedText label="" text={value} points={points} located={located} setTip={setTip} hoveredPoint={hoveredPoint} bare />
-            : <div className="ep-empty">No text yet — click Edit to add it.</div>)
-        : <textarea className="ep-textarea" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Edit your revised text here…" />}
+      {free ? (
+        <textarea className="ep-textarea" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Edit your revised text here…" />
+      ) : value ? (
+        <div className="ep-read">
+          {segs.map((s, i) => s.mark
+            ? <mark key={i} className={"hl ep-hl" + (s.mark.p._grammar ? " hl-gram" : "") + (s.mark.p._lint ? " hl-lint" : "")}
+                style={(s.mark.p._grammar || s.mark.p._lint)
+                  ? { textDecorationColor: s.mark.p._color.bd }
+                  : { background: s.mark.p._color.bg, borderBottomColor: s.mark.p._color.bd }}
+                onClick={(e) => openEdit(s.mark, e)}>
+                {s.text}{!s.mark.p._grammar && !s.mark.p._lint && <sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>}
+              </mark>
+            : <span key={i}>{s.text}</span>)}
+          <div className="ep-readhint">Click any highlight to edit it · or “Edit freely” for the rest</div>
+        </div>
+      ) : (
+        <div className="ep-empty">No text yet — click “Edit freely” to add it.</div>
+      )}
+
+      {edit && (<>
+        <div className="ep-pop-back" onClick={() => setEdit(null)} />
+        <SpanEditor edit={edit} setEdit={setEdit} onSave={saveEdit} onFix={applyGrammar} onCancel={() => setEdit(null)} />
+      </>)}
+    </div>
+  );
+}
+
+function SpanEditor({ edit, setEdit, onSave, onFix, onCancel }) {
+  const p = edit.p;
+  const w = 360;
+  let left = edit.x; if (typeof window !== "undefined") { if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12; if (left < 12) left = 12; }
+  const isGrammar = p._grammar, isLint = p._lint;
+  return (
+    <div className="span-editor" style={{ left, top: edit.y + 8, width: w, borderColor: p._color.bd }}>
+      <div className="se-head">
+        {isGrammar ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>grammar</span><span className="pt-code">{p.gtype || "fix"}</span></>
+          : isLint ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>SOP rule</span><span className="pt-code">{p.kind}</span></>
+          : <><span className={"pt-sev " + p.sev}>{p.sev}</span><span className="pt-code">{p.code}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span></>}
+      </div>
+      {isGrammar && <div className="se-fix"><span className="g-orig">{p.original}</span> → <span className="g-sug">{p.suggestion}</span></div>}
+      {isLint && <div className="se-why">{p.fix}{p.rule ? <span className="muted"> · {p.rule}</span> : null}</div>}
+      {!isGrammar && !isLint && (<>
+        <div className="se-fix">{p.fix || p.title}</div>
+        {p.why && <div className="se-why"><b>Why:</b> {p.why}</div>}
+      </>)}
+      <textarea className="se-input" value={edit.draft} autoFocus
+        onChange={(e) => setEdit({ ...edit, draft: e.target.value })}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(); if (e.key === "Escape") onCancel(); }} />
+      <div className="se-actions">
+        {isGrammar && <button className="ib-fixed" onClick={onFix}>✓ Apply fix</button>}
+        <button className="ib-agree" onClick={onSave}>✓ Save edit</button>
+        <button className="ib-disagree" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -737,9 +821,29 @@ function CameraResult({ a }) {
   );
 }
 
+function MinimalInputBoxes({ lg }) {
+  const [open, setOpen] = useState(null); // which box's why is showing
+  const cams = lg.cameras_text_implies?.length ? lg.cameras_text_implies : ["SVC-F"];
+  const items = [...cams.map((c) => ({ key: c, label: c, why: lg.camera_selection_note || "Forward view covers the decision." }))];
+  if (lg.temporal_needed === "yes") items.push({ key: "Temporal", label: "Temporal", why: lg.temporal_reason || "Motion across frames matters here." });
+  const cur = items.find((it) => it.key === open);
+  return (
+    <div>
+      <div className="mi-boxes">
+        {items.map((it) => (
+          <button key={it.key} className={"mi-box" + (open === it.key ? " on" : "")} onClick={() => setOpen(open === it.key ? null : it.key)}>
+            {it.label}<span className="mi-q">?</span>
+          </button>
+        ))}
+      </div>
+      {cur && <div className="mi-why"><b>{cur.label}:</b> {cur.why} <span className="muted">— confirm against the video; you decide.</span></div>}
+    </div>
+  );
+}
+
 function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, consistencyPoints, rubricPoints, inSplit, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan,
   fading, onAddressed, onDisagree, pendingAddressed, confirmAddressedAnyway, convertToDisagree,
-  camItems, camCleared, camFading, clearCam }) {
+  camItems, camCleared, camFading, clearCam, applyGrammarFix }) {
   const gPoints = grammarPoints(grammar);
   const gTrace = gPoints.filter((p) => p.where !== "plan");
   const gPlan = gPoints.filter((p) => p.where === "plan");
@@ -811,21 +915,11 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
       {/* 5. Camera checks — mandatory gate */}
       <CameraGate items={camItems} cleared={camCleared} fading={camFading} clearCam={clearCam} />
 
-      {/* 6. Minimal Input — big word, recommendation colored, explanation black */}
+      {/* 6. Minimal Input — big label; each recommended item is a clickable box that reveals why */}
       {a.label_guidance && (
         <div className="r-guide">
-          <div className="r-guide-line">
-            <span className="r-guide-k">Minimal Input</span>
-            <span className="r-guide-v">{a.label_guidance.cameras_text_implies?.length ? a.label_guidance.cameras_text_implies.join(", ") : "SVC-F"}{a.label_guidance.temporal_needed === "yes" ? " + Temporal" : ""}</span>
-          </div>
-          <details className="r-more compact">
-            <summary><span className="plus">+</span> why</summary>
-            <div className="r-more-body">
-              <p><b>Temporal:</b> {a.label_guidance.temporal_needed} — {a.label_guidance.temporal_reason}</p>
-              {a.label_guidance.camera_selection_note && <p>{a.label_guidance.camera_selection_note}</p>}
-              <p className="muted">A hint to confirm against the video — you decide.</p>
-            </div>
-          </details>
+          <div className="r-guide-k">Minimal Input</div>
+          <MinimalInputBoxes lg={a.label_guidance} />
         </div>
       )}
 
@@ -852,7 +946,11 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
             <summary><span className="plus">+</span> Grammar &amp; mechanics ({gPoints.length})</summary>
             <div className="r-more-body">
               {gPoints.map((p, i) => (
-                <div className="gfix" key={i}><span className="gfix-where">{p.where}</span><span className="g-orig">{p.original}</span><span className="g-arrow">→</span><span className="g-sug">{p.suggestion}</span></div>
+                <div className="gfix" key={i}>
+                  <span className="gfix-where">{p.where}</span>
+                  <span className="g-orig">{p.original}</span><span className="g-arrow">→</span><span className="g-sug">{p.suggestion}</span>
+                  {applyGrammarFix && <button className="gfix-btn" onClick={() => applyGrammarFix(p.where, p.original, p.suggestion)}>✓ fix</button>}
+                </div>
               ))}
             </div>
           </details>
