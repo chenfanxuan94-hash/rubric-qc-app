@@ -65,6 +65,26 @@ export default function Admin() {
     })).sort((a, b) => b.major_v - a.major_v || b.major - a.major);
   }
 
+  async function downloadFeedback() {
+    try {
+      const r = await fetch("/api/feedback?pw=" + encodeURIComponent(key));
+      const data = await r.json();
+      if (!r.ok) { setError(data.error || "Failed to fetch feedback"); return; }
+      const rows = data.feedback || [];
+      if (!rows.length) { setError("No feedback logged yet."); return; }
+      const cols = ["created_at", "tasker_name", "task_id", "severity", "code", "where_field", "action", "text_changed", "issue_fix", "issue_why", "evidence", "note"];
+      const head = cols.join(",");
+      const body = rows.map((rw) => cols.map((c) => csvCell(rw[c])).join(",")).join("\n");
+      const blob = new Blob(["\ufeff" + head + "\n" + body], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "rubric_qc_feedback.csv"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setError(e.message); }
+  }
+
+  function downloadFeedback_placeholder() {}
+
   function commonMistakes(rows) {
     const codes = {};
     for (const r of rows) {
@@ -145,6 +165,7 @@ export default function Admin() {
           <div className="btns">
             <button className="ghost" onClick={() => load(key)}>Refresh</button>
             <button className="ghost" onClick={exportCsv}>Export CSV</button>
+            <button className="ghost" onClick={downloadFeedback}>Download feedback</button>
           </div>
         </div>
       </header>

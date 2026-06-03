@@ -46,6 +46,15 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false);
   const [unsavedModal, setUnsavedModal] = useState(false);
 
+  // v3.5 interaction state
+  const [dismissed, setDismissed] = useState({});      // issueKey -> 'addressed' | 'disagree'
+  const [fading, setFading] = useState({});            // issueKey -> true while animating out
+  const [suppressedList, setSuppressedList] = useState([]); // [{code, fix}] disagreed; persists across re-checks
+  const [camCleared, setCamCleared] = useState({});    // camIndex -> 'checked' | 'na'
+  const [camFading, setCamFading] = useState({});
+  const [pendingAddressed, setPendingAddressed] = useState(null); // issueKey awaiting "no change?" confirm
+  const [resultText, setResultText] = useState({ trace: "", plan: "" }); // text at result time
+
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
@@ -82,7 +91,7 @@ export default function Home() {
     setFull({ loading: true, res: null, err: null, raw: null, notices: [] });
     setGram({ loading: true, res: null, err: null });
     const [d, g] = await Promise.all([
-      callApi("/api/check", { ...base(), priorFindings: prevFindings }),
+      callApi("/api/check", { ...base(), priorFindings: prevFindings, suppressed: suppressedList }),
       callApi("/api/grammar", base(), 120000),
     ]);
     if (d.analysis) {
@@ -98,6 +107,11 @@ export default function Home() {
     }
     setFull({ loading: false, res: d.analysis || null, err: d.error || null, raw: d.raw || null, notices: d.analysis ? noticesFor() : [] });
     setGram({ loading: false, res: (g.grammar && Array.isArray(g.grammar.errors)) ? g.grammar.errors : [], err: g.error || null });
+    if (d.analysis) {
+      // reset per-result interaction state; keep disagreed suppressions
+      setDismissed({}); setFading({}); setCamCleared({}); setCamFading({}); setPendingAddressed(null);
+      setResultText({ trace: revisedTrace, plan: revisedPlan });
+    }
   }
 
   async function suggestMin() {
@@ -110,6 +124,52 @@ export default function Home() {
     if (!res) return null;
     if ((res.major_risks?.length || 0) > 0) return 0;
     return Math.max(0, 100 - 5 * (res.minor_flags?.length || 0));
+  }
+
+  async function logFeedback(ev) {
+    try {
+      await fetch("/api/feedback", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: [{ taskerName, taskId, ...ev }] }),
+      });
+    } catch {}
+  }
+
+  function fadeThenDismiss(key, action) {
+    setFading((f) => ({ ...f, [key]: true }));
+    setTimeout(() => setDismissed((d) => ({ ...d, [key]: action })), 480);
+  }
+
+  // p is an issue point {code, sev, where, fix, why, evidence, _key}
+  function onDisagree(p) {
+    fadeThenDismiss(p._key, "disagree");
+    setSuppressedList((s) => [...s, { code: p.code, fix: p.fix || p.title }]);
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "disagree" });
+  }
+
+  function onAddressed(p) {
+    // did the relevant field change since the result was produced?
+    const field = (p.where === "plan") ? "plan" : "trace";
+    const now = field === "plan" ? revisedPlan : revisedTrace;
+    const changed = (now || "") !== (resultText[field] || "");
+    if (!changed) { setPendingAddressed(p._key); return; } // ask "fixed or disagree?"
+    fadeThenDismiss(p._key, "addressed");
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: true });
+  }
+
+  function confirmAddressedAnyway(p) { // they insist they fixed it though text looks same
+    setPendingAddressed(null);
+    fadeThenDismiss(p._key, "addressed");
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: false, note: "claimed-fixed-no-text-change" });
+  }
+  function convertToDisagree(p) { // after the prompt, they admit they disagree
+    setPendingAddressed(null);
+    onDisagree(p);
+  }
+
+  function clearCam(idx, how) {
+    setCamFading((f) => ({ ...f, [idx]: true }));
+    setTimeout(() => setCamCleared((c) => ({ ...c, [idx]: how })), 420);
   }
 
   async function submit() {
@@ -140,12 +200,21 @@ export default function Home() {
     setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
     setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
     setRevisions([]); setPrevFindings(null); setShowHistory(false); setUnsavedModal(false);
+    setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const points = full.res ? assignPoints(full.res) : [];
+  const allPoints = full.res ? assignPoints(full.res) : [];
+  // stable key per issue; attach _key and _fading
+  allPoints.forEach((p) => { p._key = (p.sev || "x") + "|" + (p.code || "") + "|" + (p.where || "") + "|" + (p.fix || p.title || ""); });
+  const points = allPoints.filter((p) => !dismissed[p._key]); // active (not agreed/disagreed)
   const tracePoints = points.filter((p) => (p.where || "trace") === "trace");
   const planPoints = points.filter((p) => p.where === "plan");
+
+  // camera-check gate
+  const camItems = (full.res && Array.isArray(full.res.self_review_checklist)) ? full.res.self_review_checklist : [];
+  const camAllCleared = camItems.every((_, i) => camCleared[i]);
+  const canSubmit = !full.res || camAllCleared; // if a check was run, all camera items must be cleared first
 
   return (
     <>
@@ -174,7 +243,7 @@ export default function Home() {
       <div className="wrap">
         <div className="disclaimer">
           <span className="ico">⚠️</span>
-          <p><strong>The AI cannot see the camera footage.</strong> It reviews your text — consistency, trace↔plan agreement, writing, canonical compliance — and lists what needs the cameras. <strong>A clean result is not a guarantee the segment is correct.</strong></p>
+          <p>This reviews your <strong>text</strong> — consistency, trace↔plan agreement, writing, and the rubric. Always confirm the scene against the video; a clean text check isn't a guarantee on its own.</p>
         </div>
 
         {ctxMissing && (
@@ -319,11 +388,14 @@ export default function Home() {
                 </div>
               )}
               <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
-                tracePoints={tracePoints} planPoints={planPoints}
+                tracePoints={tracePoints} planPoints={planPoints} points={points}
                 grammar={gram.res} grammarErr={gram.err}
                 lint={lintAll(revisedTrace, revisedPlan)}
                 traceText={revisedTrace} planText={revisedPlan}
-                preTrace={preseedTrace} prePlan={preseedPlan} />
+                preTrace={preseedTrace} prePlan={preseedPlan}
+                fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
+                pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
+                camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} />
             </div>
           )}
         </div>
@@ -333,11 +405,14 @@ export default function Home() {
           <h2 style={{ color: "var(--ink)" }}>Submit for review</h2>
           <p className="note" style={{ marginBottom: 12 }}>Saves this task (ID, trace/plan, and your check) for the reviewer. Run the check first.</p>
           {submitErr && <div className="banner-err" style={{ marginBottom: 12 }}>{submitErr}</div>}
+          {!canSubmit && !submitted && (
+            <div className="gate-note">Clear all camera checks above (mark each <b>Checked</b> or <b>Not relevant</b>) before submitting.</div>
+          )}
           {submitted ? (
             <div className="banner-ok">✓ Submitted. Task <b>{taskId}</b> is saved.
               <button className="ghost" style={{ marginLeft: 14 }} onClick={resetForNext}>Start next task</button></div>
           ) : (
-            <button className="submit" onClick={submit} disabled={submitting}>{submitting ? <><span className="spinner" />Saving…</> : "Submit task →"}</button>
+            <button className="submit" onClick={submit} disabled={submitting || !canSubmit}>{submitting ? <><span className="spinner" />Saving…</> : "Submit task →"}</button>
           )}
         </div>
 
@@ -473,26 +548,43 @@ function HighlightedText({ label, text, points, located = [], setTip, hoveredPoi
   );
 }
 
-function PointRow({ p }) {
+function IssueRow({ p, fading, onAddressed, onDisagree, pending, confirmAddressedAnyway, convertToDisagree }) {
   const [open, setOpen] = useState(false);
-  const has = p.why || p.what || p.evidence || p.confirm || p.detail || p.title;
+  const has = p.why || p.what || p.evidence || p.confirm || p.detail;
+  const isPending = pending === p._key;
   return (
-    <div className="pt-row">
-      <div className="pt-line" onClick={() => has && setOpen(!open)}>
-        <span className="pt-num" style={{ background: p._color.bd }}>{p._point}</span>
-        <span className={"pt-sev " + p.sev}>{p.sev}</span>
-        <span className="pt-code">{p.code}{p.where ? " · " + p.where : ""}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span>
-        <span className="pt-fix">{p.fix || p.title || p.detail}</span>
-        {has && <span className="pt-q">{open ? "−" : "?"}</span>}
+    <div className={"issue" + (fading ? " fading" : "")}>
+      <div className="issue-top">
+        <span className={"issue-dot " + p.sev} />
+        <div className="issue-main">
+          <div className="issue-fix">{p.fix || p.title || p.detail}</div>
+          <div className="issue-tags">
+            <span className={"itag " + p.sev}>{p.sev}</span>
+            <span className="icode">{p.code}{p.where ? " · " + p.where : ""}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span>
+            {has && <button className="ilink" onClick={() => setOpen(!open)}>{open ? "less ▴" : "details +"}</button>}
+          </div>
+        </div>
       </div>
       {open && has && (
-        <div className="pt-detail">
-          {p.title && p.title !== p.fix && <div className="dr"><b>{p.title}</b></div>}
+        <div className="issue-detail">
           {p.what && <div className="dr"><b>What:</b> {p.what}</div>}
           {p.why && <div className="dr"><b>Why:</b> {p.why}</div>}
           {p.detail && !p.why && <div className="dr">{p.detail}</div>}
           {p.evidence && p.evidence !== "—" && <div className="dr"><b>Evidence:</b> <span className="ev">{p.evidence}</span></div>}
-          {p.confirm && <div className="cam">📷 Confirm on camera: {p.confirm}</div>}
+        </div>
+      )}
+      {isPending ? (
+        <div className="issue-confirm">
+          <span>I don't see a change in your text for this — did you fix it, or do you disagree?</span>
+          <div className="issue-actions">
+            <button className="ib-fixed" onClick={() => confirmAddressedAnyway(p)}>I fixed it</button>
+            <button className="ib-disagree" onClick={() => convertToDisagree(p)}>I disagree</button>
+          </div>
+        </div>
+      ) : (
+        <div className="issue-actions">
+          <button className="ib-agree" onClick={() => onAddressed(p)}>✓ Addressed</button>
+          <button className="ib-disagree" onClick={() => onDisagree(p)}>✕ Disagree</button>
         </div>
       )}
     </div>
@@ -539,24 +631,37 @@ function TrackedDiff({ label, before, after }) {
   );
 }
 
-function CompactVerdict({ a }) {
-  const maj = a.major_risks?.length || 0, min = a.minor_flags?.length || 0, cam = a.self_review_checklist?.length || 0;
+function BigCounts({ a }) {
+  const maj = a.major_risks?.length || 0, min = a.minor_flags?.length || 0;
   const v = a.verdict || "ok";
   return (
-    <div className={"compact-verdict " + v}>
-      <span className="vt">{v === "major_risk" ? "⚑ Fix before submit" : v === "minor_issues" ? "Minor cleanup" : "✓ Clean (text-level)"}</span>
-      {(maj || min || cam) ? <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{maj} major · {min} minor · {cam} to verify</span> : null}
-      {a.headline && <span className="vh">— {a.headline}</span>}
+    <div className={"counts " + v}>
+      {maj > 0 && <span className="ct ct-major"><b>{maj}</b> major</span>}
+      {min > 0 && <span className="ct ct-minor"><b>{min}</b> minor</span>}
+      {maj === 0 && min === 0 && <span className="ct ct-clean">✓ no rubric issues in the text</span>}
     </div>
   );
 }
 
-function SelfReviewBlock({ items }) {
+function CameraGate({ items, cleared, fading, clearCam }) {
   if (!items || !items.length) return null;
+  const remaining = items.filter((_, i) => !cleared[i]).length;
   return (
-    <details className="expander"><summary><span className="chev">▸</span> 📷 Verify on camera ({items.length}) — AI can't see these</summary>
-      <div className="ebody">{items.map((q, i) => (<label className="review-item" key={i}><input type="checkbox" /><span><span className="qc">{q.code} · </span><span className="qt">{q.question}</span></span></label>))}</div>
-    </details>
+    <div className="camgate">
+      <div className="camgate-head">📷 Check on the video — clear each before submitting {remaining > 0 ? <span className="camgate-n">{remaining} left</span> : <span className="camgate-done">all clear ✓</span>}</div>
+      <div className="camgate-list">
+        {items.map((q, i) => cleared[i] ? null : (
+          <div className={"camitem" + (fading[i] ? " fading" : "")} key={i}>
+            <span className="camq">{q.question}</span>
+            <div className="cambtns">
+              <button className="cb-yes" onClick={() => clearCam(i, "checked")}>Checked</button>
+              <button className="cb-na" onClick={() => clearCam(i, "na")}>Not relevant</button>
+            </div>
+          </div>
+        ))}
+        {remaining === 0 && <div className="camall">All camera checks cleared — you're good to submit.</div>}
+      </div>
+    </div>
   );
 }
 
@@ -575,116 +680,135 @@ function CameraResult({ a }) {
   );
 }
 
-function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan }) {
+function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, grammar, grammarErr, lint, traceText, planText, preTrace, prePlan,
+  fading, onAddressed, onDisagree, pendingAddressed, confirmAddressedAnyway, convertToDisagree,
+  camItems, camCleared, camFading, clearCam }) {
   const gPoints = grammarPoints(grammar);
   const gTrace = gPoints.filter((p) => p.where !== "plan");
   const gPlan = gPoints.filter((p) => p.where === "plan");
   const lintTrace = lintLocated(lint, "trace");
   const lintPlan = lintLocated(lint, "plan");
-  // rubric points first so they win any overlap with grammar spans
   const traceAll = [...tracePoints, ...gTrace];
   const planAll = [...planPoints, ...gPlan];
+  const orderedIssues = [...points].sort((x, y) => x._point - y._point);
+  const consist = a.trace_plan_consistency;
+  const consistText = consist && consist.consistent === false ? consist.detail : "";
+
   return (
-    <div>
-      <CompactVerdict a={a} />
-      {a.summary && <p className="note" style={{ marginBottom: 12 }}>{a.summary}</p>}
-
-      {a.trace_plan_consistency && (
-        <div className={"consist " + (a.trace_plan_consistency.consistent === true ? "ok" : a.trace_plan_consistency.consistent === false ? "bad" : "unk")}>
-          <span className="consist-label">Trace ↔ Plan consistency</span>
-          <span className="consist-val">{a.trace_plan_consistency.consistent === true ? "✓ Consistent" : a.trace_plan_consistency.consistent === false ? "⚑ Mismatch (M3)" : "Not checked"}</span>
-          <span className="consist-detail">{a.trace_plan_consistency.detail}</span>
-        </div>
+    <div className="result">
+      {/* 1. What changed — top, concise, dark */}
+      {a.change_summary && (
+        <div className="r-changed"><span className="r-changed-k">What changed</span> {a.change_summary}</div>
       )}
 
-      {a.skip_check && a.skip_check.decision_coherent === false && (<div className="banner-err" style={{ marginBottom: 8 }}>⚑ Skip decision may be inconsistent: {a.skip_check.note}</div>)}
+      {/* 2. Big counts */}
+      <BigCounts a={a} />
 
-      <div className="legend">
-        <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
-        <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
-        <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
-        <span><i className="lg gram" style={{ borderColor: SOPLINT_COLOR.bd }} /> SOP rule</span>
-        <span className="note" style={{ margin: 0 }}>hover any highlight for the fix</span>
-      </div>
+      {/* 3. One-line verdict — big, plain */}
+      {a.headline && <div className="r-headline">{a.headline}</div>}
 
-      <HighlightedText label="Revised trace" text={traceText} points={traceAll} located={lintTrace} setTip={setTip} hoveredPoint={hoveredPoint} />
-      <HighlightedText label="Revised plan" text={planText} points={planAll} located={lintPlan} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
-
-      {(tracePoints.length + planPoints.length) > 0 && (
-        <div className="pt-list">
-          <div className="mini-head" style={{ color: "var(--ink)" }}>Rubric findings</div>
-          {[...tracePoints, ...planPoints].sort((x, y) => x._point - y._point).map((p, i) => <PointRow key={i} p={p} />)}
-        </div>
-      )}
-
-      {/* Grammar sweep — separate, comprehensive, does not affect score */}
-      {grammarErr ? (
-        <div className="notice-box" style={{ marginTop: 10 }}>Grammar sweep unavailable: {grammarErr}</div>
-      ) : gPoints.length > 0 ? (
-        <details className="expander" style={{ marginTop: 10 }} open>
-          <summary><span className="chev">▸</span> Grammar &amp; mechanics ({gPoints.length}) <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>— separate from score</span></summary>
-          <div className="ebody">
-            {gPoints.map((p, i) => (
-              <div className="gfix" key={i}>
-                <span className="gfix-where">{p.where}</span>
-                <span className="g-orig">{p.original}</span>
-                <span className="g-arrow">→</span>
-                <span className="g-sug">{p.suggestion}</span>
-                {p.note && <span className="gfix-note">{p.note}</span>}
-              </div>
-            ))}
-          </div>
-        </details>
-      ) : (a.major_risks || a.minor_flags) ? (
-        <div className="note" style={{ marginTop: 10 }}>✓ No mechanical grammar issues found.</div>
-      ) : null}
-
-      {/* SOP writing-standard violations — deterministic, not AI */}
-      {lint && lint.length > 0 && (
-        <details className="expander" style={{ marginTop: 10 }} open>
-          <summary><span className="chev">▸</span> SOP writing standards ({lint.length}) <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}>— rule-based, not AI</span></summary>
-          <div className="ebody">
-            {lint.map((e, i) => (
-              <div className="gfix" key={i}>
-                <span className="gfix-where">{e.where}</span>
-                <span className="sop-kind">{e.kind}</span>
-                <span className="g-orig">{e.original}</span>
-                <span className="g-arrow">→</span>
-                <span className="sop-fix">{e.fix}</span>
-              </div>
-            ))}
+      {/* 4. Details (the fuller reasoning) behind a + ; consistency folded in here (no duplicate box) */}
+      {(a.summary || consistText) && (
+        <details className="r-more">
+          <summary><span className="plus">+</span> Why / full explanation</summary>
+          <div className="r-more-body">
+            {a.summary && <p>{a.summary}</p>}
+            {consistText && <p><b>Trace ↔ Plan:</b> {consistText}</p>}
+            {a.skip_check && a.skip_check.decision_coherent === false && <p><b>Skip decision:</b> {a.skip_check.note}</p>}
           </div>
         </details>
       )}
 
-      <TrackedDiff label="Trace diff (pre-seed → revised)" before={preTrace} after={traceText} />
-      <TrackedDiff label="Plan diff (pre-seed → revised)" before={prePlan} after={planText} />
-
-      {a.diff_analysis && (a.diff_analysis.suspicious_unchanged?.length > 0 || a.diff_analysis.new_problems_introduced?.length > 0 || a.diff_analysis.key_changes?.length > 0) && (
-        <details className="expander"><summary><span className="chev">▸</span> What changed vs. pre-seed (AI summary)</summary>
-          <div className="ebody" style={{ fontSize: 12.5 }}>
-            {a.diff_analysis.key_changes?.length > 0 && (<><b>Changes:</b><ul style={{ margin: "4px 0 8px 18px" }}>{a.diff_analysis.key_changes.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
-            {a.diff_analysis.suspicious_unchanged?.length > 0 && (<><b style={{ color: "var(--red)" }}>Risky unchanged:</b><ul style={{ margin: "4px 0 8px 18px", color: "var(--red)" }}>{a.diff_analysis.suspicious_unchanged.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
-            {a.diff_analysis.new_problems_introduced?.length > 0 && (<><b style={{ color: "var(--red)" }}>New problems:</b><ul style={{ margin: "4px 0 0 18px", color: "var(--red)" }}>{a.diff_analysis.new_problems_introduced.map((c, i) => <li key={i}>{c}</li>)}</ul></>)}
-          </div></details>
+      {/* 5. Issues — detailed list with Agree/Disagree */}
+      {orderedIssues.length > 0 ? (
+        <details className="r-more" open>
+          <summary><span className="plus">+</span> Issues to resolve ({orderedIssues.length})</summary>
+          <div className="r-more-body">
+            <div className="issue-hint">Mark each <b>Addressed</b> once you fix it, or <b>Disagree</b> if you think it's wrong — it'll clear from here and from your text below.</div>
+            {orderedIssues.map((p) => (
+              <IssueRow key={p._key} p={p} fading={!!fading[p._key]}
+                onAddressed={onAddressed} onDisagree={onDisagree}
+                pending={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree} />
+            ))}
+          </div>
+        </details>
+      ) : (
+        <div className="r-allclear">✓ All flagged issues handled.</div>
       )}
 
-      <SelfReviewBlock items={a.self_review_checklist} />
+      {/* 6. Camera checks — mandatory gate */}
+      <CameraGate items={camItems} cleared={camCleared} fading={camFading} clearCam={clearCam} />
 
+      {/* 7. Label guidance — recommendation up front, explanation behind + */}
       {a.label_guidance && (
-        <details className="expander"><summary><span className="chev">▸</span> Label guidance (cameras / Temporal) — confirm against video</summary>
-          <div className="ebody" style={{ fontSize: 12.5 }}>
-            <div className="g-row"><b>Cameras text implies:</b> {a.label_guidance.cameras_text_implies?.length ? a.label_guidance.cameras_text_implies.join(", ") : "—"}</div>
-            <div className="g-row"><b>Temporal?</b> {a.label_guidance.temporal_needed} — {a.label_guidance.temporal_reason}</div>
-            <div className="g-row"><b>Selection:</b> {a.label_guidance.camera_selection_note}</div>
-          </div></details>
+        <div className="r-guide">
+          <div className="r-guide-line">
+            <span className="r-guide-k">Minimal Input</span>
+            <span className="r-guide-v">{a.label_guidance.cameras_text_implies?.length ? a.label_guidance.cameras_text_implies.join(", ") : "SVC-F"}{a.label_guidance.temporal_needed === "yes" ? " + Temporal" : ""}</span>
+          </div>
+          <details className="r-more compact">
+            <summary><span className="plus">+</span> why</summary>
+            <div className="r-more-body">
+              <p><b>Temporal:</b> {a.label_guidance.temporal_needed} — {a.label_guidance.temporal_reason}</p>
+              {a.label_guidance.camera_selection_note && <p>{a.label_guidance.camera_selection_note}</p>}
+              <p className="muted">A hint to confirm against the video — you decide.</p>
+            </div>
+          </details>
+        </div>
       )}
 
-      {a.rubric_sweep?.length > 0 && (
-        <details className="expander"><summary><span className="chev">▸</span> Full rubric sweep (all 17)</summary>
-          <div className="ebody"><div className="sweep">{a.rubric_sweep.map((r, i) => (
-            <div className="sweep-item" key={i} title={r.note}><span className={"dot " + (r.status || "na").replace("/", "")} /><span className="sc">{r.code}</span><span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span></div>))}</div></div></details>
-      )}
+      {/* 8–11. Everything else, collapsed by default */}
+      <div className="r-extras">
+        <details className="r-more compact">
+          <summary><span className="plus">+</span> Your revised text (highlighted)</summary>
+          <div className="r-more-body">
+            <div className="legend">
+              <span><i className="lg" style={{ background: SEV_COLOR.major.bg, borderColor: SEV_COLOR.major.bd }} /> Major</span>
+              <span><i className="lg" style={{ background: SEV_COLOR.minor.bg, borderColor: SEV_COLOR.minor.bd }} /> Minor</span>
+              <span><i className="lg gram" style={{ borderColor: GRAMMAR_COLOR.bd }} /> Grammar</span>
+              <span><i className="lg gram" style={{ borderColor: SOPLINT_COLOR.bd }} /> SOP rule</span>
+            </div>
+            <HighlightedText label="Revised trace" text={traceText} points={traceAll} located={lintTrace} setTip={setTip} hoveredPoint={hoveredPoint} />
+            <HighlightedText label="Revised plan" text={planText} points={planAll} located={lintPlan} setTip={setTip} hoveredPoint={hoveredPoint} emptyMsg={!planText ? "No revised plan provided." : null} />
+          </div>
+        </details>
+
+        {!grammarErr && gPoints.length > 0 && (
+          <details className="r-more compact">
+            <summary><span className="plus">+</span> Grammar &amp; mechanics ({gPoints.length})</summary>
+            <div className="r-more-body">
+              {gPoints.map((p, i) => (
+                <div className="gfix" key={i}><span className="gfix-where">{p.where}</span><span className="g-orig">{p.original}</span><span className="g-arrow">→</span><span className="g-sug">{p.suggestion}</span></div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        {lint && lint.length > 0 && (
+          <details className="r-more compact">
+            <summary><span className="plus">+</span> SOP writing standards ({lint.length})</summary>
+            <div className="r-more-body">
+              {lint.map((e, i) => (
+                <div className="gfix" key={i}><span className="gfix-where">{e.where}</span><span className="sop-kind">{e.kind}</span><span className="g-orig">{e.original}</span><span className="g-arrow">→</span><span className="sop-fix">{e.fix}</span></div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        <details className="r-more compact"><summary><span className="plus">+</span> Pre-seed → revised diff</summary>
+          <div className="r-more-body">
+            <TrackedDiff label="Trace" before={preTrace} after={traceText} />
+            <TrackedDiff label="Plan" before={prePlan} after={planText} />
+          </div>
+        </details>
+
+        {a.rubric_sweep?.length > 0 && (
+          <details className="r-more compact"><summary><span className="plus">+</span> Full rubric sweep (all 17)</summary>
+            <div className="r-more-body"><div className="sweep">{a.rubric_sweep.map((r, i) => (
+              <div className="sweep-item" key={i} title={r.note}><span className={"dot " + (r.status || "na").replace("/", "")} /><span className="sc">{r.code}</span><span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span></div>))}</div></div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
