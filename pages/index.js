@@ -1,5 +1,5 @@
-// pages/index.js — v3.4.0
-import { useState } from "react";
+// pages/index.js — v3.8.0
+import { useState, useRef, useLayoutEffect } from "react";
 import { SKIP_QUESTIONS } from "../lib/rubricKnowledge.js";
 import { lintAll } from "../lib/sopLint.js";
 import ChatAssistant from "../components/ChatAssistant.js";
@@ -173,7 +173,8 @@ export default function Home() {
     setTimeout(() => setCamCleared((c) => ({ ...c, [idx]: how })), 420);
   }
 
-  // one-click grammar fix: replace first occurrence of `original` with `suggestion` in the right field
+  // one-click grammar fix: replace first occurrence of `original` with `suggestion`, and
+  // remove that error from the active grammar list so the blue underline clears immediately.
   function applyGrammarFix(where, original, suggestion) {
     if (!original) return;
     if ((where || "trace") === "plan") {
@@ -181,6 +182,17 @@ export default function Home() {
     } else {
       setRevisedTrace((t) => t.replace(original, suggestion));
     }
+    setGram((g) => {
+      if (!g.res) return g;
+      let removed = false;
+      const res = g.res.filter((e) => {
+        if (!removed && (e.where || "trace") === (where || "trace") && e.original === original && e.suggestion === suggestion) {
+          removed = true; return false;
+        }
+        return true;
+      });
+      return { ...g, res };
+    });
   }
 
   async function submit() {
@@ -387,9 +399,9 @@ export default function Home() {
                   </div>
                   <div className="split-right">
                     <div className="split-right-head">Your revised text — edit here</div>
-                    <EditPanel label="Trace" value={revisedTrace} onChange={setRevisedTrace}
+                    <EditPanel label="Trace" field="trace" value={revisedTrace} onChange={setRevisedTrace} onGrammarFix={applyGrammarFix}
                       points={[...tracePoints, ...gTracePts]} located={lintLocated(lintNow, "trace")} setTip={setTip} hoveredPoint={tip?.p?._point} />
-                    <EditPanel label="Plan" value={revisedPlan} onChange={setRevisedPlan}
+                    <EditPanel label="Plan" field="plan" value={revisedPlan} onChange={setRevisedPlan} onGrammarFix={applyGrammarFix}
                       points={[...planPoints, ...gPlanPts]} located={lintLocated(lintNow, "plan")} setTip={setTip} hoveredPoint={tip?.p?._point} />
                   </div>
                 </div>
@@ -511,7 +523,7 @@ function lintLocated(issues, which) {
     .filter((e) => (e.where || "trace") === which)
     .map((e, i) => ({
       start: e.start, end: e.end,
-      p: { _lint: true, _point: "S" + (i + 1), _color: SOPLINT_COLOR, kind: e.kind, original: e.original, fix: e.fix, rule: e.rule },
+      p: { _lint: true, _point: "S" + (i + 1), _color: SOPLINT_COLOR, kind: e.kind, original: e.original, fix: e.fix, rule: e.rule, suggestion: e.suggestion },
     }));
 }
 
@@ -601,24 +613,27 @@ function HighlightedText({ label, text, points, located = [], setTip, hoveredPoi
 }
 
 // Right-pane editor (Route A): highlighted view stays; click any highlight to edit THAT span
-// in an anchored popup (grammar gets one-click fix). "Edit freely" drops to a full textarea.
-function EditPanel({ label, value, onChange, points, located, setTip, hoveredPoint }) {
+// in an anchored popup, prefilled with a suggested correction. Grammar = one-click fix.
+function EditPanel({ label, field, value, onChange, onGrammarFix, points, located, setTip, hoveredPoint }) {
   const [free, setFree] = useState(false);
-  const [edit, setEdit] = useState(null); // {start,end,p,x,y,draft}
+  const [edit, setEdit] = useState(null); // {start,end,p,rect,draft}
 
   function openEdit(mark, e) {
     const r = e.currentTarget.getBoundingClientRect();
     setTip && setTip(null);
-    setEdit({ start: mark.start, end: mark.end, p: mark.p, x: r.left, y: r.bottom, draft: value.slice(mark.start, mark.end) });
+    const span = value.slice(mark.start, mark.end);
+    const pre = (mark.p.suggestion != null && mark.p.suggestion !== undefined) ? mark.p.suggestion : span;
+    setEdit({ start: mark.start, end: mark.end, p: mark.p, rect: { left: r.left, top: r.top, bottom: r.bottom }, draft: pre, span });
   }
   function saveEdit() {
     if (!edit) return;
     onChange(value.slice(0, edit.start) + edit.draft + value.slice(edit.end));
     setEdit(null);
   }
-  function applyGrammar() {
+  function applyGrammar() { // grammar one-click → also clears the underline via onGrammarFix
     if (!edit) return;
-    onChange(value.slice(0, edit.start) + (edit.p.suggestion || "") + value.slice(edit.end));
+    if (onGrammarFix) onGrammarFix(field, edit.p.original, edit.p.suggestion);
+    else onChange(value.slice(0, edit.start) + (edit.p.suggestion || "") + value.slice(edit.end));
     setEdit(null);
   }
 
@@ -645,7 +660,7 @@ function EditPanel({ label, value, onChange, points, located, setTip, hoveredPoi
                 {s.text}{!s.mark.p._grammar && !s.mark.p._lint && <sup className="hl-num" style={{ background: s.mark.p._color.bd }}>{s.mark.p._point}</sup>}
               </mark>
             : <span key={i}>{s.text}</span>)}
-          <div className="ep-readhint">Click any highlight to edit it · or “Edit freely” for the rest</div>
+          <div className="ep-readhint">Click any highlight to edit it (a fix is suggested) · or “Edit freely” for the rest</div>
         </div>
       ) : (
         <div className="ep-empty">No text yet — click “Edit freely” to add it.</div>
@@ -659,23 +674,48 @@ function EditPanel({ label, value, onChange, points, located, setTip, hoveredPoi
   );
 }
 
+// shows whitespace visibly so spacing errors are findable
+function showWS(s) {
+  if (s == null) return "";
+  return String(s).replace(/ /g, "·").replace(/\t/g, "⇥");
+}
+
 function SpanEditor({ edit, setEdit, onSave, onFix, onCancel }) {
   const p = edit.p;
-  const w = 360;
-  let left = edit.x; if (typeof window !== "undefined") { if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12; if (left < 12) left = 12; }
+  const ref = useRef(null);
+  const [pos, setPos] = useState({ left: edit.rect.left, top: edit.rect.bottom + 8 });
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight, M = 12;
+    let left = edit.rect.left, top = edit.rect.bottom + 8;
+    if (left + rect.width > vw - M) left = vw - rect.width - M;
+    if (left < M) left = M;
+    if (top + rect.height > vh - M) { // flip above the highlight
+      top = edit.rect.top - rect.height - 8;
+      if (top < M) top = M;
+    }
+    setPos({ left, top });
+  }, [edit]);
+
   const isGrammar = p._grammar, isLint = p._lint;
+  const isSpacing = isGrammar && (p.gtype === "spacing");
   return (
-    <div className="span-editor" style={{ left, top: edit.y + 8, width: w, borderColor: p._color.bd }}>
+    <div className="span-editor" ref={ref} style={{ left: pos.left, top: pos.top, borderColor: p._color.bd }}>
       <div className="se-head">
         {isGrammar ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>grammar</span><span className="pt-code">{p.gtype || "fix"}</span></>
           : isLint ? <><span className="pt-sev" style={{ background: p._color.bg, color: p._color.tx }}>SOP rule</span><span className="pt-code">{p.kind}</span></>
           : <><span className={"pt-sev " + p.sev}>{p.sev}</span><span className="pt-code">{p.code}{p.type ? " · " + String(p.type).replace(/_/g, " ") : ""}</span></>}
       </div>
-      {isGrammar && <div className="se-fix"><span className="g-orig">{p.original}</span> → <span className="g-sug">{p.suggestion}</span></div>}
+      {isGrammar && (<>
+        {p.note && <div className="se-note">📍 {p.note}</div>}
+        <div className="se-fix"><span className="g-orig">{isSpacing ? showWS(p.original) : p.original}</span> → <span className="g-sug">{isSpacing ? showWS(p.suggestion) : p.suggestion}</span></div>
+      </>)}
       {isLint && <div className="se-why">{p.fix}{p.rule ? <span className="muted"> · {p.rule}</span> : null}</div>}
       {!isGrammar && !isLint && (<>
         <div className="se-fix">{p.fix || p.title}</div>
         {p.why && <div className="se-why"><b>Why:</b> {p.why}</div>}
+        {p.suggestion != null && <div className="se-sugtag">✎ Suggested rewrite below — verify against the video before accepting.</div>}
       </>)}
       <textarea className="se-input" value={edit.draft} autoFocus
         onChange={(e) => setEdit({ ...edit, draft: e.target.value })}
@@ -822,21 +862,22 @@ function CameraResult({ a }) {
 }
 
 function MinimalInputBoxes({ lg }) {
-  const [open, setOpen] = useState(null); // which box's why is showing
+  const [open, setOpen] = useState({}); // key -> bool
   const cams = lg.cameras_text_implies?.length ? lg.cameras_text_implies : ["SVC-F"];
-  const items = [...cams.map((c) => ({ key: c, label: c, why: lg.camera_selection_note || "Forward view covers the decision." }))];
-  if (lg.temporal_needed === "yes") items.push({ key: "Temporal", label: "Temporal", why: lg.temporal_reason || "Motion across frames matters here." });
-  const cur = items.find((it) => it.key === open);
+  const items = [...cams.map((c) => ({ key: c, label: c, why: lg.camera_selection_note || "Forward view covers the driving decision." }))];
+  if (lg.temporal_needed === "yes") items.push({ key: "Temporal", label: "Temporal", why: lg.temporal_reason || "Object movement across frames matters here." });
   return (
     <div>
-      <div className="mi-boxes">
+      <div className="mi-head">Suggested input:</div>
+      <div className="mi-list">
         {items.map((it) => (
-          <button key={it.key} className={"mi-box" + (open === it.key ? " on" : "")} onClick={() => setOpen(open === it.key ? null : it.key)}>
-            {it.label}<span className="mi-q">?</span>
-          </button>
+          <div className="mi-row" key={it.key}>
+            <span className="mi-pill">{it.label}</span>
+            <button className="mi-plus" onClick={() => setOpen((o) => ({ ...o, [it.key]: !o[it.key] }))} aria-label="why">{open[it.key] ? "−" : "+"}</button>
+            {open[it.key] && <div className="mi-why"><b>{it.label}:</b> {it.why} <span className="muted">— confirm against the video; you decide.</span></div>}
+          </div>
         ))}
       </div>
-      {cur && <div className="mi-why"><b>{cur.label}:</b> {cur.why} <span className="muted">— confirm against the video; you decide.</span></div>}
     </div>
   );
 }
@@ -945,13 +986,17 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
           <details className="r-more compact">
             <summary><span className="plus">+</span> Grammar &amp; mechanics ({gPoints.length})</summary>
             <div className="r-more-body">
-              {gPoints.map((p, i) => (
-                <div className="gfix" key={i}>
-                  <span className="gfix-where">{p.where}</span>
-                  <span className="g-orig">{p.original}</span><span className="g-arrow">→</span><span className="g-sug">{p.suggestion}</span>
-                  {applyGrammarFix && <button className="gfix-btn" onClick={() => applyGrammarFix(p.where, p.original, p.suggestion)}>✓ fix</button>}
-                </div>
-              ))}
+              {gPoints.map((p, i) => {
+                const sp = p.gtype === "spacing";
+                return (
+                  <div className="gfix" key={i}>
+                    <span className="gfix-where">{p.where}</span>
+                    <span className="g-orig">{sp ? showWS(p.original) : p.original}</span><span className="g-arrow">→</span><span className="g-sug">{sp ? showWS(p.suggestion) : p.suggestion}</span>
+                    {p.note && <span className="gfix-note">📍 {p.note}</span>}
+                    {applyGrammarFix && <button className="gfix-btn" onClick={() => applyGrammarFix(p.where, p.original, p.suggestion)}>✓ fix</button>}
+                  </div>
+                );
+              })}
             </div>
           </details>
         )}

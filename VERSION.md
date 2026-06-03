@@ -1,6 +1,15 @@
 # Rubric QC Tool — version log
 
-## v3.7.0  (current) — in-place highlight editing, boxed Minimal Input, re-check moved
+## v3.8.0  (current) — explicit grammar, prefilled suggestions, popup + fixes
+- GRAMMAR NOW SAYS WHERE: every grammar flag includes an explicit location note (e.g. "extra space between 'vehicles' and 'partially'", "missing comma after 'stalled'"). Spacing errors render whitespace VISIBLY (spaces shown as ·) so you can actually see the doubled space — in both the list and the click popup.
+- CLICK A HIGHLIGHT → SUGGESTION PREFILLED: the edit box now opens pre-filled with a suggested correction (exact fix for grammar/SOP; a suggested rewrite for rubric issues, clearly marked "verify against the video before accepting"). Hit Save, or tweak first. No authoring from scratch.
+- POPUP NO LONGER CLIPS: the edit popup measures itself and stays fully on-screen — clamps left/right and flips above the highlight when near the bottom.
+- GRAMMAR FIX CLEARS RELIABLY: applying a grammar fix (blue underline) now removes that item immediately, so the underline always disappears — previously it sometimes lingered until re-check.
+- MINIMAL INPUT redesigned to:  "Suggested input:" then each item on its own row as a box (styled like the Checked/Not-relevant buttons) with a separate (+) to reveal its why.
+- Note on the two underline styles: blue = the Opus grammar sweep (typos/punctuation/spacing); violet dotted = the deterministic SOP linter (abbreviations, hedging, we/you); colored block + number = a rubric finding (incl. sentence-level issues). They look different because they come from different engines, but ALL are now click-to-edit-with-a-suggestion, so the distinction no longer changes what you do.
+- No new DB migration.
+
+## v3.7.0
 - RE-CHECK MOVED: the "↻ Re-check (after edits)" button is now at the BOTTOM of the results, not above them. The first "Run check" stays with the inputs.
 - RESULTS IN THEIR OWN BLOCK: results (and the side-by-side working view) now render in a separate card, clearly detached from the pre-seed/revision inputs — not just divided by a line.
 - BIGGER TEXT in the revised trace/plan panels.

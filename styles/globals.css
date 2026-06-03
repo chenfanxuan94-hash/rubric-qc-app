@@ -602,3 +602,22 @@ textarea.locked{background:var(--bg);color:var(--muted);cursor:not-allowed;}
 .mi-q{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;background:rgba(14,124,123,.18);color:inherit;font-size:11px;font-weight:700;}
 .mi-box.on .mi-q{background:rgba(255,255,255,.25);}
 .mi-why{margin-top:11px;font-size:14px;color:var(--ink);line-height:1.55;background:var(--bg);border-radius:8px;padding:10px 13px;}
+
+/* ============ v3.8 — explicit grammar, prefilled span editor, new minimal input ============ */
+/* span editor sizing now fixed-width via class (positioning handled in JS) */
+.span-editor{width:360px;max-width:calc(100vw - 24px);}
+.se-note{font-size:12.5px;color:var(--teal);font-weight:600;margin-bottom:7px;}
+.se-sugtag{font-size:11.5px;color:#78350F;background:var(--amber-bg);border:1px solid var(--amber);border-radius:6px;padding:5px 8px;margin-bottom:8px;}
+.g-orig,.g-sug{white-space:pre-wrap;}
+
+/* grammar note in list */
+.gfix-note{font-size:11.5px;color:var(--teal);font-weight:600;}
+
+/* minimal input — Suggested input + boxes styled like the camera Checked/Not-relevant buttons */
+.mi-head{font-size:14px;color:var(--ink);font-weight:600;margin-bottom:10px;}
+.mi-list{display:flex;flex-direction:column;gap:9px;}
+.mi-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.mi-pill{display:inline-flex;align-items:center;justify-content:center;min-width:96px;background:var(--green);color:#fff;border-radius:8px;padding:9px 16px;font-size:14.5px;font-weight:700;font-family:var(--mono);letter-spacing:.3px;}
+.mi-plus{width:30px;height:30px;border-radius:8px;border:1px solid var(--rule-dark);background:#fff;color:var(--ink);font-size:18px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+.mi-plus:hover{border-color:var(--teal);color:var(--teal);}
+.mi-why{flex-basis:100%;font-size:14px;color:var(--ink);line-height:1.55;background:var(--bg);border-radius:8px;padding:10px 13px;margin-top:2px;}
