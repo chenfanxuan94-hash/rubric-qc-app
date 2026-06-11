@@ -10,15 +10,19 @@ import { buildSystemPrompt, buildUserMessage } from "../../lib/checkPrompt.js";
 
 export const config = { maxDuration: 800, api: { bodyParser: { sizeLimit: "12mb" } } };
 
-// parse client data-URL frames -> [{media_type, data}], hard caps for safety
+// parse client frames ({d,view,t} or legacy data-URL strings) -> [{media_type, data, view, t}]
 function parseFrames(frames) {
   if (!Array.isArray(frames)) return [];
   const out = [];
-  for (const f of frames.slice(0, 6)) {
-    const m = typeof f === "string" && f.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  let total = 0;
+  for (const f of frames.slice(0, 16)) {
+    const url = typeof f === "string" ? f : (f && f.d);
+    const m = typeof url === "string" && url.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) continue;
     if (m[2].length > 1200000) continue; // ~0.9MB per frame max
-    out.push({ media_type: m[1], data: m[2] });
+    total += m[2].length;
+    if (total > 4500000) break; // total payload guard (~3.4MB binary)
+    out.push({ media_type: m[1], data: m[2], view: (f && f.view) || "grid", t: (f && typeof f.t === "number") ? f.t : null });
   }
   return out;
 }
@@ -33,7 +37,7 @@ export default async function handler(req, res) {
   const images = parseFrames(payload.frames);
   const { frames, ...rest } = payload;
   const system = buildSystemPrompt();
-  const user = buildUserMessage({ ...rest, frameCount: images.length });
+  const user = buildUserMessage({ ...rest, frameCount: images.length, frameMeta: images.map((im) => ({ view: im.view, t: im.t })) });
   const m = checkModelById(payload.modelId || "opus48");
   const t0 = Date.now();
 

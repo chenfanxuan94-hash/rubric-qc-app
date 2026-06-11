@@ -49,6 +49,8 @@ export default function Home() {
   const [sharing, setSharing] = useState(false);
   const [frames, setFrames] = useState([]); // [{dataUrl, kb}]
   const [burstIn, setBurstIn] = useState(0); // countdown
+  const [clipOn, setClipOn] = useState(false); // recording 1fps
+  const [frameView, setFrameView] = useState("grid"); // what's on screen for the next captures
   const shareVideoRef = useRef(null);
   const shareStreamRef = useRef(null);
 
@@ -65,38 +67,43 @@ export default function Home() {
   }
   function stopShare() {
     try { shareStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
-    shareStreamRef.current = null; setSharing(false); setBurstIn(0);
+    shareStreamRef.current = null; setSharing(false); setBurstIn(0); stopClip();
   }
-  function grabFrame() {
+  function grabFrame(maxW = 1024, q = 0.7) {
     const v = shareVideoRef.current;
     if (!v || !v.videoWidth) return null;
-    const scale = Math.min(1, 1024 / v.videoWidth);
+    const scale = Math.min(1, maxW / v.videoWidth);
     const c = document.createElement("canvas");
     c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
     c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
-    const dataUrl = c.toDataURL("image/jpeg", 0.7);
+    const dataUrl = c.toDataURL("image/jpeg", q);
     return { dataUrl, kb: Math.round(dataUrl.length * 0.75 / 1024) };
   }
   function captureOne() {
-    const f = grabFrame();
-    if (f) setFrames((cur) => [...cur, f].slice(0, 6));
+    const f = grabFrame(1024, 0.7);
+    if (f) setFrames((cur) => [...cur, { ...f, view: frameView, t: null }].slice(0, 16));
   }
-  function captureBurst() { // 3s countdown so you can switch to the footage window & press play
+  const clipRef = useRef(null);
+  function recordClip() { // 3-2-1 countdown, then 1 frame/sec for up to 15s (or Stop)
     let n = 3; setBurstIn(n);
     const cd = setInterval(() => {
       n -= 1; setBurstIn(n);
       if (n <= 0) {
         clearInterval(cd);
-        let shots = 0;
-        const iv = setInterval(() => {
-          const f = grabFrame();
-          if (f) setFrames((cur) => [...cur, f].slice(0, 6));
-          shots += 1;
-          if (shots >= 6) clearInterval(iv);
-        }, 500);
+        let t = 0;
+        setClipOn(true);
+        const grab = () => {
+          const f = grabFrame(880, 0.62);
+          if (f) setFrames((cur) => [...cur, { ...f, view: frameView, t }].slice(0, 16));
+          t += 1;
+          if (t >= 15) stopClip();
+        };
+        grab();
+        clipRef.current = setInterval(grab, 1000);
       }
     }, 1000);
   }
+  function stopClip() { if (clipRef.current) clearInterval(clipRef.current); clipRef.current = null; setClipOn(false); setBurstIn(0); }
   const framesKb = frames.reduce((a, f) => a + f.kb, 0);
   const [gram, setGram] = useState({ loading: false, res: null, err: null });
   const [cam, setCam] = useState({ loading: false, res: null, err: null });
@@ -171,7 +178,7 @@ export default function Home() {
     selectedModels.forEach((mid) => {
       callApi("/api/check", {
         ...base(), modelId: mid,
-        frames: frames.map((f) => f.dataUrl),
+        frames: frames.map((f) => ({ d: f.dataUrl, view: f.view || 'grid', t: f.t })),
         priorFindings: prevFindings[mid] || null,
         suppressed: suppressedList.filter((s) => !s.model || s.model === mid).map(({ model, ...rest }) => rest),
       }, 780000).then((d) => {
@@ -472,7 +479,7 @@ export default function Home() {
           {/* FOOTAGE FRAMES (beta, v3.10) — share the window playing the footage; capture frames for the AI */}
           <div className="foot-panel">
             <div className="mp-head">📺 Footage frames <span className="beta-tag">beta</span></div>
-            <div className="mp-note">Optional: share the <b>window or tab playing the task footage</b>, capture a few frames at the decision moment, and the AI can visually verify the text against them. Tip: put the footage window and this tool <b>side by side</b>; capture the camera grid once for context, then the zoomed decision camera (usually SVC-F). Frames are sent to the AI for this check only — they are <b>never stored</b>.</div>
+            <div className="mp-note">Optional: share the <b>window or tab playing the task footage</b>, capture a few frames at the decision moment, and the AI can visually verify the text against them. Tip: put the footage window and this tool <b>side by side</b>; clips are 10–15s, so use 🎬 Record clip to sample the whole clip (1 frame/sec) — switch to the footage window during the 3-2-1 countdown and press play. Tag what's on screen (grid or a zoomed camera) so the AI reads it correctly. Frames are sent to the AI for this check only — they are <b>never stored</b>.</div>
             {!sharing ? (
               <button className="ghost" onClick={startShare}>Share footage view…</button>
             ) : (
@@ -482,8 +489,15 @@ export default function Home() {
                   {burstIn > 0 && <div className="foot-count">{burstIn}</div>}
                 </div>
                 <div className="foot-btns">
-                  <button className="primary" onClick={captureOne} disabled={frames.length >= 6}>📸 Capture frame</button>
-                  <button className="ghost" onClick={captureBurst} disabled={burstIn > 0 || frames.length >= 6}>🎞 Burst (6 over 3s, starts in 3…)</button>
+                  <label className="hint" style={{ marginBottom: 2 }}>What's on screen right now:</label>
+                  <select className="foot-view" value={frameView} onChange={(e) => setFrameView(e.target.value)}>
+                    <option value="grid">Full 8-camera grid</option>
+                    {CAMERAS.map((c) => <option key={c} value={c}>{c} (zoomed single camera)</option>)}
+                  </select>
+                  <button className="primary" onClick={captureOne} disabled={frames.length >= 16 || clipOn}>📸 Capture frame</button>
+                  {!clipOn
+                    ? <button className="ghost" onClick={recordClip} disabled={burstIn > 0 || frames.length >= 16}>🎬 Record clip (1 frame/sec, up to 15s)</button>
+                    : <button className="ghost" onClick={stopClip}>⏹ Stop recording ({frames.length}/16)</button>}
                   <button className="ghost" onClick={stopShare}>Stop sharing</button>
                 </div>
               </div>
@@ -493,10 +507,11 @@ export default function Home() {
                 {frames.map((f, i) => (
                   <div className="foot-thumb" key={i}>
                     <img src={f.dataUrl} alt={"frame " + (i + 1)} />
+                    <span className="foot-tag">{f.view === "grid" ? "grid" : f.view}{f.t != null ? ` · ${f.t}s` : ""}</span>
                     <button className="foot-x" onClick={() => setFrames((cur) => cur.filter((_, j) => j !== i))}>✕</button>
                   </div>
                 ))}
-                <div className="foot-meta">{frames.length}/6 · ~{framesKb} KB {framesKb > 3000 && <b style={{ color: "var(--red)" }}>— too heavy, remove a frame</b>}</div>
+                <div className="foot-meta">{frames.length}/16 · ~{framesKb} KB {framesKb > 3200 && <b style={{ color: "var(--red)" }}>— too heavy, remove frames</b>}</div>
               </div>
             )}
           </div>

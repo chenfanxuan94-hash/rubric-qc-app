@@ -1,6 +1,13 @@
 # Rubric QC Tool — version log
 
-## v3.10.0  (current) — FOOTAGE FRAMES (BETA)
+## v3.10.1  (current) — footage beta tuned for real 10–15s clips + grid teaching
+- 🎬 RECORD CLIP replaces the 3s burst: 3-2-1 countdown, then 1 frame/second for up to 15 seconds (Stop anytime) — samples the WHOLE clip; up to 16 frames (clip frames auto-compressed smaller to fit).
+- Each frame is TAGGED with what's on screen (full grid or a specific zoomed camera, via a small selector) and its ~t= second within the clip; tags show on the thumbnails and are passed to the AI in order.
+- The AI is now TAUGHT the 8-camera grid layout from your actual view: top row L→R = SVC-SL, SVC-FL, SVC-F (CENTER = FRONT), SVC-FR, SVC-SR; bottom row (centered) L→R = SVC-RL, SVC-R, SVC-RR — with a sanity-check instruction against perspective cues, and that the driving decision is normally judged from SVC-F.
+- Chronological t= frames are explicitly flagged for temporal questions (cut-ins, light changes, active school bus).
+- No DB migration.
+
+## v3.10.0 — FOOTAGE FRAMES (BETA)
 - New optional "📺 Footage frames (beta)" panel: share the window/tab playing the task footage (browser screen-share, one click), see a live preview, then 📸 Capture single frames or 🎞 Burst (6 frames over 3s, with a 3-2-1 countdown so you can switch to the footage window and press play). Up to 6 frames, auto-downscaled/compressed.
 - Frames travel with Run check / Re-check to ALL selected models. The models visually verify the text against them: every finding gains "👁 Frames: confirmed / CONTRADICTED / not visible" + a one-line note, and the results show "What the frames show" up top.
 - Guardrails: frames are samples — the models are instructed that absence in frames is NEVER proof of absence; nothing scene-related is invented. Frames are used for the check only and are NEVER stored (submissions record only the frame COUNT). Best workflow: footage window and this tool side by side; capture the camera grid once for context, then the zoomed decision camera.
