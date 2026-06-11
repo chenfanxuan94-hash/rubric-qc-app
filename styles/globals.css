@@ -673,3 +673,6 @@ textarea.locked{background:var(--bg);color:var(--muted);cursor:not-allowed;}
 /* v3.10.1 — clip recorder + frame tags */
 .foot-view{border:1px solid var(--rule-dark);border-radius:8px;padding:8px 10px;font-family:var(--sans);font-size:13px;background:#fff;color:var(--ink);}
 .foot-tag{position:absolute;left:4px;bottom:4px;background:rgba(15,23,42,.85);color:#fff;font-size:10px;font-family:var(--mono);border-radius:5px;padding:2px 6px;}
+
+/* v3.10.2 — model's read in camera checks */
+.cam-modelans{display:block;margin-top:5px;font-size:13px;font-weight:600;color:#0F766E;background:var(--teal-pale);border:1px solid var(--teal-lite);border-radius:7px;padding:6px 9px;}

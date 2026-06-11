@@ -15,13 +15,13 @@ function parseFrames(frames) {
   if (!Array.isArray(frames)) return [];
   const out = [];
   let total = 0;
-  for (const f of frames.slice(0, 16)) {
+  for (const f of frames.slice(0, 36)) {
     const url = typeof f === "string" ? f : (f && f.d);
     const m = typeof url === "string" && url.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) continue;
     if (m[2].length > 1200000) continue; // ~0.9MB per frame max
     total += m[2].length;
-    if (total > 4500000) break; // total payload guard (~3.4MB binary)
+    if (total > 4400000) break; // total payload guard (~3.4MB binary)
     out.push({ media_type: m[1], data: m[2], view: (f && f.view) || "grid", t: (f && typeof f.t === "number") ? f.t : null });
   }
   return out;

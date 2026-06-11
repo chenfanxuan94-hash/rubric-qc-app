@@ -93,13 +93,13 @@ export default function Home() {
         let t = 0;
         setClipOn(true);
         const grab = () => {
-          const f = grabFrame(880, 0.62);
-          if (f) setFrames((cur) => [...cur, { ...f, view: frameView, t }].slice(0, 16));
-          t += 1;
-          if (t >= 15) stopClip();
+          const f = grabFrame(720, 0.55);
+          if (f) setFrames((cur) => [...cur, { ...f, view: frameView, t: Math.round(t * 10) / 10 }].slice(0, 36));
+          t += 1 / 3;
+          if (t >= 11) stopClip();
         };
         grab();
-        clipRef.current = setInterval(grab, 1000);
+        clipRef.current = setInterval(grab, 333);
       }
     }, 1000);
   }
@@ -441,6 +441,48 @@ export default function Home() {
 
         {/* PART 2 — combined captions */}
         <div className="card">
+          {/* FOOTAGE FRAMES (beta, v3.10) — share the window playing the footage; capture frames for the AI */}
+          <div className="foot-panel">
+            <div className="mp-head">📺 Footage frames <span className="beta-tag">beta</span></div>
+            <div className="mp-note">Optional: share the <b>window or tab playing the task footage</b>, capture a few frames at the decision moment, and the AI can visually verify the text against them. Tip: put the footage window and this tool <b>side by side</b>; clips are 10–15s, so use 🎬 Record clip to sample the whole clip (3 frames/sec for up to 11s) — switch to the footage window during the 3-2-1 countdown and press play. Tag what's on screen (grid or a zoomed camera) so the AI reads it correctly. Frames are sent to the AI for this check only — they are <b>never stored</b>.</div>
+            {!sharing ? (
+              <button className="ghost" onClick={startShare}>Share footage view…</button>
+            ) : (
+              <div className="foot-live">
+                <div className="foot-prevwrap">
+                  <video ref={shareVideoRef} muted playsInline className="foot-preview" />
+                  {burstIn > 0 && <div className="foot-count">{burstIn}</div>}
+                </div>
+                <div className="foot-btns">
+                  <label className="hint" style={{ marginBottom: 2 }}>What's on screen right now:</label>
+                  <select className="foot-view" value={frameView} onChange={(e) => setFrameView(e.target.value)}>
+                    <option value="grid">Full 8-camera grid</option>
+                    {CAMERAS.map((c) => <option key={c} value={c}>{c} (zoomed single camera)</option>)}
+                  </select>
+                  <button className="primary" onClick={captureOne} disabled={frames.length >= 36 || clipOn}>📸 Capture frame</button>
+                  {!clipOn
+                    ? <button className="ghost" onClick={recordClip} disabled={burstIn > 0 || frames.length >= 36}>🎬 Record clip (3 frames/sec, up to 11s)</button>
+                    : <button className="ghost" onClick={stopClip}>⏹ Stop recording ({frames.length}/36)</button>}
+                  <button className="ghost" onClick={stopShare}>Stop sharing</button>
+                </div>
+              </div>
+            )}
+            {frames.length > 0 && (
+              <div className="foot-frames">
+                {frames.map((f, i) => (
+                  <div className="foot-thumb" key={i}>
+                    <img src={f.dataUrl} alt={"frame " + (i + 1)} />
+                    <span className="foot-tag">{f.view === "grid" ? "grid" : f.view}{f.t != null ? ` · ${f.t}s` : ""}</span>
+                    <button className="foot-x" onClick={() => setFrames((cur) => cur.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                ))}
+                <div className="foot-meta">{frames.length}/36 · ~{framesKb} KB {framesKb > 3200 && <b style={{ color: "var(--red)" }}>— too heavy, remove frames</b>}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card">
           <h2><span className="n">2</span> Captions — pre-seed &amp; your revision</h2>
           <p className="note" style={{ marginBottom: 14 }}>Paste the pre-seed and your revised versions. Pre-seed is optional (leave blank to skip the comparison). The trace and plan are always checked <b>together</b> for consistency.</p>
 
@@ -474,46 +516,6 @@ export default function Home() {
               {cam.err && <div className="banner-err" style={{ marginTop: 10 }}>{cam.err}</div>}
               {cam.res && <CameraResult a={cam.res} />}
             </div>
-          </div>
-
-          {/* FOOTAGE FRAMES (beta, v3.10) — share the window playing the footage; capture frames for the AI */}
-          <div className="foot-panel">
-            <div className="mp-head">📺 Footage frames <span className="beta-tag">beta</span></div>
-            <div className="mp-note">Optional: share the <b>window or tab playing the task footage</b>, capture a few frames at the decision moment, and the AI can visually verify the text against them. Tip: put the footage window and this tool <b>side by side</b>; clips are 10–15s, so use 🎬 Record clip to sample the whole clip (1 frame/sec) — switch to the footage window during the 3-2-1 countdown and press play. Tag what's on screen (grid or a zoomed camera) so the AI reads it correctly. Frames are sent to the AI for this check only — they are <b>never stored</b>.</div>
-            {!sharing ? (
-              <button className="ghost" onClick={startShare}>Share footage view…</button>
-            ) : (
-              <div className="foot-live">
-                <div className="foot-prevwrap">
-                  <video ref={shareVideoRef} muted playsInline className="foot-preview" />
-                  {burstIn > 0 && <div className="foot-count">{burstIn}</div>}
-                </div>
-                <div className="foot-btns">
-                  <label className="hint" style={{ marginBottom: 2 }}>What's on screen right now:</label>
-                  <select className="foot-view" value={frameView} onChange={(e) => setFrameView(e.target.value)}>
-                    <option value="grid">Full 8-camera grid</option>
-                    {CAMERAS.map((c) => <option key={c} value={c}>{c} (zoomed single camera)</option>)}
-                  </select>
-                  <button className="primary" onClick={captureOne} disabled={frames.length >= 16 || clipOn}>📸 Capture frame</button>
-                  {!clipOn
-                    ? <button className="ghost" onClick={recordClip} disabled={burstIn > 0 || frames.length >= 16}>🎬 Record clip (1 frame/sec, up to 15s)</button>
-                    : <button className="ghost" onClick={stopClip}>⏹ Stop recording ({frames.length}/16)</button>}
-                  <button className="ghost" onClick={stopShare}>Stop sharing</button>
-                </div>
-              </div>
-            )}
-            {frames.length > 0 && (
-              <div className="foot-frames">
-                {frames.map((f, i) => (
-                  <div className="foot-thumb" key={i}>
-                    <img src={f.dataUrl} alt={"frame " + (i + 1)} />
-                    <span className="foot-tag">{f.view === "grid" ? "grid" : f.view}{f.t != null ? ` · ${f.t}s` : ""}</span>
-                    <button className="foot-x" onClick={() => setFrames((cur) => cur.filter((_, j) => j !== i))}>✕</button>
-                  </div>
-                ))}
-                <div className="foot-meta">{frames.length}/16 · ~{framesKb} KB {framesKb > 3200 && <b style={{ color: "var(--red)" }}>— too heavy, remove frames</b>}</div>
-              </div>
-            )}
           </div>
 
           {/* MODEL PICKER (v3.9) — which AIs review this task; applies to Run check and Re-check */}
@@ -1068,7 +1070,9 @@ function CameraGate({ items, cleared, fading, clearCam }) {
       <div className="camgate-list">
         {items.map((q, i) => cleared[i] ? null : (
           <div className={"camitem" + (fading[i] ? " fading" : "")} key={i}>
-            <span className="camq">{q.question}</span>
+            <span className="camq">{q.question}
+              {q.model_answer && <span className="cam-modelans">👁 Model's read (suggestion only — verify yourself): {q.model_answer}</span>}
+            </span>
             <div className="cambtns">
               <button className="cb-yes" onClick={() => clearCam(i, "checked")}>Checked</button>
               <button className="cb-na" onClick={() => clearCam(i, "na")}>Not relevant</button>
