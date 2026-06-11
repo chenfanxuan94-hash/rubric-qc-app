@@ -61,3 +61,6 @@ create table if not exists public.feedback (
   note        text           -- optional follow-up (e.g. confirmed-disagree after no-change prompt)
 );
 alter table public.feedback enable row level security;
+
+-- v3.9.0 (optional): record which model each feedback event came from
+alter table public.feedback add column if not exists model text;

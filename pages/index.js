@@ -3,6 +3,7 @@ import { useState, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { SKIP_QUESTIONS } from "../lib/rubricKnowledge.js";
 import { lintAll } from "../lib/sopLint.js";
+import { CHECK_MODELS } from "../lib/checkModels.js";
 import ChatAssistant from "../components/ChatAssistant.js";
 
 const CAMERAS = ["SVC-F", "SVC-FL", "SVC-FR", "SVC-SL", "SVC-SR", "SVC-RL", "SVC-RR", "SVC-R"];
@@ -36,14 +37,21 @@ export default function Home() {
   const [cameras, setCameras] = useState([]);
   const [temporal, setTemporal] = useState(false);
 
-  const [full, setFull] = useState({ loading: false, res: null, err: null, raw: null, notices: [] });
+  // ---- multi-model check state (v3.9) ----
+  // selectedModels: which models run on "Run check" (opus48 is locked on).
+  const [selectedModels, setSelectedModels] = useState(["opus48"]);
+  // runs: per-model result { loading, res, err, raw, ms }
+  const [runs, setRuns] = useState({});
+  const [activeModel, setActiveModel] = useState("opus48");
+  const userPickedTab = useRef(false);
+  const [runNotices, setRunNotices] = useState([]);
   const [gram, setGram] = useState({ loading: false, res: null, err: null });
   const [cam, setCam] = useState({ loading: false, res: null, err: null });
   const [missing, setMissing] = useState(null); // missing revised fields
   const [ctxMissing, setCtxMissing] = useState(null); // missing required context
   const [tip, setTip] = useState(null);
   const [revisions, setRevisions] = useState([]); // [{trace, plan, verdict, majors, minors, at}]
-  const [prevFindings, setPrevFindings] = useState(null); // anchor for re-check
+  const [prevFindings, setPrevFindings] = useState({}); // per-model anchor for re-check
   const [showHistory, setShowHistory] = useState(false);
   const [unsavedModal, setUnsavedModal] = useState(false);
 
@@ -90,31 +98,54 @@ export default function Home() {
 
   async function doRun() {
     setMissing(null); setSubmitted(false);
-    setFull({ loading: true, res: null, err: null, raw: null, notices: [] });
+    userPickedTab.current = false;
+    setActiveModel(selectedModels[0] || "opus48");
+    // snapshot the text the models will see (for "did you change it?" checks)
+    setResultText({ trace: revisedTrace, plan: revisedPlan });
+    setRunNotices([]);
+    // reset per-result interaction state; keep disagreed suppressions
+    setDismissed({}); setFading({}); setCamCleared({}); setCamFading({}); setPendingAddressed(null);
+    // all selected models -> loading
+    setRuns(Object.fromEntries(selectedModels.map((mid) => [mid, { loading: true, res: null, err: null, raw: null, ms: null }])));
     setGram({ loading: true, res: null, err: null });
-    const [d, g] = await Promise.all([
-      callApi("/api/check", { ...base(), priorFindings: prevFindings, suppressed: suppressedList }),
-      callApi("/api/grammar", base(), 120000),
-    ]);
-    if (d.analysis) {
-      const snap = {
-        trace: revisedTrace, plan: revisedPlan,
-        verdict: d.analysis.verdict,
-        majors: d.analysis.major_risks?.length || 0,
-        minors: d.analysis.minor_flags?.length || 0,
-        at: new Date().toISOString(),
-      };
-      setRevisions((r) => [...r, snap]);
-      setPrevFindings({ major_risks: d.analysis.major_risks || [], minor_flags: d.analysis.minor_flags || [] });
-    }
-    setFull({ loading: false, res: d.analysis || null, err: d.error || null, raw: d.raw || null, notices: d.analysis ? noticesFor() : [] });
-    setGram({ loading: false, res: (g.grammar && Array.isArray(g.grammar.errors)) ? g.grammar.errors : [], err: g.error || null });
-    if (d.analysis) {
-      // reset per-result interaction state; keep disagreed suppressions
-      setDismissed({}); setFading({}); setCamCleared({}); setCamFading({}); setPendingAddressed(null);
-      setResultText({ trace: revisedTrace, plan: revisedPlan });
-    }
+
+    // grammar once (it reviews the text, not the model)
+    callApi("/api/grammar", base(), 120000).then((g) => {
+      setGram({ loading: false, res: (g.grammar && Array.isArray(g.grammar.errors)) ? g.grammar.errors : [], err: g.error || null });
+    });
+
+    // each model runs in parallel as its own request; tabs fill in as each finishes
+    selectedModels.forEach((mid) => {
+      callApi("/api/check", {
+        ...base(), modelId: mid,
+        priorFindings: prevFindings[mid] || null,
+        suppressed: suppressedList.filter((s) => !s.model || s.model === mid).map(({ model, ...rest }) => rest),
+      }, 780000).then((d) => {
+        if (d.analysis) {
+          setPrevFindings((pf) => ({ ...pf, [mid]: { major_risks: d.analysis.major_risks || [], minor_flags: d.analysis.minor_flags || [] } }));
+          if (mid === "opus48") {
+            const snap = {
+              trace: revisedTrace, plan: revisedPlan,
+              verdict: d.analysis.verdict,
+              majors: d.analysis.major_risks?.length || 0,
+              minors: d.analysis.minor_flags?.length || 0,
+              at: new Date().toISOString(),
+            };
+            setRevisions((r) => [...r, snap]);
+          }
+          setRunNotices(noticesFor());
+        }
+        setRuns((cur) => ({ ...cur, [mid]: { loading: false, res: d.analysis || null, err: d.error || null, raw: d.raw || null, ms: d.ms ?? null } }));
+        // jump to the first model that finishes so review can start immediately
+        if (d.analysis && !userPickedTab.current) {
+          setActiveModel((amid) => (runsRef.current?.[amid]?.res ? amid : mid));
+        }
+      });
+    });
   }
+  // keep a ref of runs for the auto-activate check above
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
 
   async function suggestMin() {
     setCam({ loading: true, res: null, err: null });
@@ -142,11 +173,11 @@ export default function Home() {
     setTimeout(() => setDismissed((d) => ({ ...d, [key]: action })), 480);
   }
 
-  // p is an issue point {code, sev, where, fix, why, evidence, _key}
+  // p is an issue point {code, sev, where, fix, why, evidence, _key, _model}
   function onDisagree(p) {
     fadeThenDismiss(p._key, "disagree");
-    setSuppressedList((s) => [...s, { code: p.code, fix: p.fix || p.title }]);
-    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "disagree" });
+    setSuppressedList((s) => [...s, { code: p.code, fix: p.fix || p.title, model: p._model || activeModel }]);
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "disagree", model: p._model || activeModel });
   }
 
   function onAddressed(p) {
@@ -156,22 +187,23 @@ export default function Home() {
     const changed = (now || "") !== (resultText[field] || "");
     if (!changed) { setPendingAddressed(p._key); return; } // ask "fixed or disagree?"
     fadeThenDismiss(p._key, "addressed");
-    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: true });
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: true, model: p._model || activeModel });
   }
 
   function confirmAddressedAnyway(p) { // they insist they fixed it though text looks same
     setPendingAddressed(null);
     fadeThenDismiss(p._key, "addressed");
-    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: false, note: "claimed-fixed-no-text-change" });
+    logFeedback({ code: p.code, where: p.where, severity: p.sev, fix: p.fix || p.title, why: p.why, evidence: p.evidence, action: "addressed", textChanged: false, note: "claimed-fixed-no-text-change", model: p._model || activeModel });
   }
   function convertToDisagree(p) { // after the prompt, they admit they disagree
     setPendingAddressed(null);
     onDisagree(p);
   }
 
-  function clearCam(idx, how) {
-    setCamFading((f) => ({ ...f, [idx]: true }));
-    setTimeout(() => setCamCleared((c) => ({ ...c, [idx]: how })), 420);
+  function clearCam(idx, how) { // camera gate is per-model: keys are `${activeModel}|${idx}`
+    const k = activeModel + "|" + idx;
+    setCamFading((f) => ({ ...f, [k]: true }));
+    setTimeout(() => setCamCleared((c) => ({ ...c, [k]: how })), 420);
   }
 
   // one-click grammar fix: replace first occurrence of `original` with `suggestion`, and
@@ -200,12 +232,18 @@ export default function Home() {
     setSubmitErr(null);
     if (!taskId.trim()) { setSubmitErr("Task ID is required to submit."); return; }
     setSubmitting(true);
+    // primary = Opus (always runs); extra models ride inside sectionResults (jsonb, no migration)
+    const primary = runs.opus48?.res || Object.values(runs).find((r) => r?.res)?.res || null;
+    const extraModels = {};
+    Object.entries(runs).forEach(([mid, r]) => {
+      if (mid !== "opus48" && (r?.res || r?.err)) extraModels[mid] = { analysis: r.res || null, error: r.err || null, ms: r.ms ?? null };
+    });
     const d = await callApi("/api/submit", {
       ...base(),
-      analysis: full.res,
-      sectionResults: { camera: cam.res, grammar: gram.res },
+      analysis: primary,
+      sectionResults: { camera: cam.res, grammar: gram.res, models: extraModels, modelSelection: selectedModels, modelTimes: Object.fromEntries(Object.entries(runs).map(([mid, r]) => [mid, r?.ms ?? null])) },
       revisions,
-      score: scoreOf(full.res),
+      score: scoreOf(primary),
     }, 30000);
     setSubmitting(false);
     if (d.error) setSubmitErr(d.error); else { setSubmitted(true); setUnsavedModal(false); }
@@ -213,7 +251,7 @@ export default function Home() {
 
   function newTaskClick() {
     // compelling reminder: if there's an un-submitted result, push hard to submit
-    if (full.res && !submitted) { setUnsavedModal(true); return; }
+    if (anyRes && !submitted) { setUnsavedModal(true); return; }
     resetForNext();
   }
 
@@ -221,17 +259,26 @@ export default function Home() {
     setTaskId(""); setTriageNote(""); setSkipped(false); setSkipAnswers({});
     setPreseedTrace(""); setRevisedTrace(""); setPreseedPlan(""); setRevisedPlan("");
     setCameras([]); setTemporal(false);
-    setFull({ loading: false, res: null, err: null, raw: null, notices: [] }); setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
+    setRuns({}); setRunNotices([]); setActiveModel(selectedModels[0] || "opus48"); userPickedTab.current = false;
+    setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
     setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
-    setRevisions([]); setPrevFindings(null); setShowHistory(false); setUnsavedModal(false);
+    setRevisions([]); setPrevFindings({}); setShowHistory(false); setUnsavedModal(false);
     setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" }); setSplitMode(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const allPoints = full.res ? assignPoints(full.res) : [];
+  // ---- per-model derived state (v3.9): everything below renders the ACTIVE tab ----
+  const act = runs[activeModel] || {};
+  const anyLoading = Object.values(runs).some((r) => r?.loading);
+  const anyRes = Object.values(runs).some((r) => r?.res);
+  const started = Object.keys(runs).length > 0;
+  const multi = selectedModels.length > 1;
+
+  const allPoints = act.res ? assignPoints(act.res, activeModel) : [];
   // stable key per issue; attach _key, _consistency
   allPoints.forEach((p) => {
-    p._key = (p.sev || "x") + "|" + (p.code || "") + "|" + (p.where || "") + "|" + (p.fix || p.title || "");
+    p._key = activeModel + "|" + (p.sev || "x") + "|" + (p.code || "") + "|" + (p.where || "") + "|" + (p.fix || p.title || "");
+    p._model = activeModel;
     const t = (p.type || "").toLowerCase();
     p._consistency = /contradict|mismatch/.test(t) || p.code === "M3";
   });
@@ -244,10 +291,24 @@ export default function Home() {
   const gTracePts = grammarPoints(gram.res).filter((p) => p.where !== "plan");
   const gPlanPts = grammarPoints(gram.res).filter((p) => p.where === "plan");
 
-  // camera-check gate
-  const camItems = (full.res && Array.isArray(full.res.self_review_checklist)) ? full.res.self_review_checklist : [];
-  const camAllCleared = camItems.every((_, i) => camCleared[i]);
-  const canSubmit = !full.res || camAllCleared; // if a check was run, all camera items must be cleared first
+  // camera-check gate — per model. The active tab renders ITS slice; submit requires
+  // EVERY model that returned a result to have all its camera items cleared.
+  const camItems = (act.res && Array.isArray(act.res.self_review_checklist)) ? act.res.self_review_checklist : [];
+  const camClearedAct = {}; const camFadingAct = {};
+  camItems.forEach((_, i) => {
+    const k = activeModel + "|" + i;
+    if (camCleared[k]) camClearedAct[i] = camCleared[k];
+    if (camFading[k]) camFadingAct[i] = camFading[k];
+  });
+  const camPendingByModel = Object.entries(runs)
+    .filter(([, r]) => r?.res)
+    .map(([mid, r]) => {
+      const items = Array.isArray(r.res.self_review_checklist) ? r.res.self_review_checklist : [];
+      const pending = items.filter((_, i) => !camCleared[mid + "|" + i]).length;
+      return { mid, pending };
+    });
+  const camAllCleared = camPendingByModel.every((x) => x.pending === 0);
+  const canSubmit = !anyRes || (camAllCleared && !anyLoading); // every returned model's camera items must be cleared first
 
   return (
     <>
@@ -354,10 +415,29 @@ export default function Home() {
             </div>
           </div>
 
-          {!full.res && (
+          {/* MODEL PICKER (v3.9) — which AIs review this task; applies to Run check and Re-check */}
+          <div className="model-pick">
+            <div className="mp-head">AI reviewers for this check</div>
+            <div className="mp-note">Opus 4.8 always runs. If you have time, add a second or third model — different models catch different blind spots. Each added model runs <b>in parallel</b> and shows in its own tab as soon as it finishes.</div>
+            <div className="mp-rows">
+              {CHECK_MODELS.map((m) => {
+                const onSel = selectedModels.includes(m.id);
+                return (
+                  <label key={m.id} className={"mp-row" + (onSel ? " on" : "") + (m.locked ? " locked" : "")}>
+                    <input type="checkbox" checked={onSel} disabled={m.locked || anyLoading}
+                      onChange={() => setSelectedModels((s) => onSel ? s.filter((x) => x !== m.id) : [...s, m.id])} />
+                    <span className="mp-name">{m.label}</span>
+                    <span className="mp-sub">{m.sub}{m.locked ? " · always on" : ""}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {!(multi ? started : anyRes) && (
             <div className="btns" style={{ marginTop: 16 }}>
-              <button className="primary" onClick={onRunClick} disabled={full.loading}>
-                {full.loading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : "Run check"}
+              <button className="primary" onClick={onRunClick} disabled={anyLoading}>
+                {anyLoading ? <><span className="spinner" />Reviewing with Opus 4.8…</> : (multi ? `Run check (${selectedModels.length} models)` : "Run check")}
               </button>
               <button className="ghost" onClick={newTaskClick}>New task</button>
             </div>
@@ -373,22 +453,50 @@ export default function Home() {
             </div>
           )}
 
-          {full.err && <div className="banner-err" style={{ marginTop: 12 }}>{full.err}</div>}
-          {full.raw && <pre className="json" style={{ marginTop: 12 }}>{full.raw}</pre>}
+          {!multi && act.err && <div className="banner-err" style={{ marginTop: 12 }}>{act.err}</div>}
+          {!multi && act.raw && <pre className="json" style={{ marginTop: 12 }}>{act.raw}</pre>}
         </div>
 
         {/* RESULTS — its own separate block */}
-        {full.res && (
+        {(multi ? started : anyRes) && (
         <div className="card results-card">
-          {(() => null)()}
-              {full.notices.length > 0 && (
-                <div className="notice-box">{full.notices.map((n, i) => <div key={i}>• {n}</div>)}</div>
+          {multi && (
+            <div className="mtabs">
+              {selectedModels.map((mid) => {
+                const m = CHECK_MODELS.find((x) => x.id === mid) || { label: mid };
+                const r = runs[mid] || {};
+                return (
+                  <button key={mid} className={"mtab" + (activeModel === mid ? " on" : "")}
+                    onClick={() => { userPickedTab.current = true; setActiveModel(mid); setTip(null); }}>
+                    {m.label}
+                    {r.loading && <span className="mtab-load" />}
+                    {!r.loading && r.ms != null && <span className="mtab-ms">{(r.ms / 1000).toFixed(0)}s</span>}
+                    {!r.loading && r.err && <span className="mtab-x">!</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {act.loading && (
+            <div className="mtab-waiting"><span className="spinner" /> {(CHECK_MODELS.find((x) => x.id === activeModel) || {}).label || "This model"} is reviewing… {multi ? "— other tabs may finish first; you can start there." : ""}</div>
+          )}
+          {!act.loading && act.err && (
+            <div>
+              <div className="banner-err">This model didn't return a usable result: {act.err}</div>
+              {act.raw && <pre className="json" style={{ marginTop: 12 }}>{act.raw}</pre>}
+            </div>
+          )}
+          {act.res && (
+            <div>
+              {runNotices.length > 0 && (
+                <div className="notice-box">{runNotices.map((n, i) => <div key={i}>• {n}</div>)}</div>
               )}
               {splitMode ? (
                 <div className="split-wrap">
                   <div className="split-left">
                     <button className="split-exit" onClick={() => setSplitMode(false)}>← Stack view</button>
-                    <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
+                    <FullResult a={act.res} setTip={setTip} hoveredPoint={tip?.p?._point}
                       tracePoints={tracePoints} planPoints={planPoints} points={points}
                       consistencyPoints={consistencyPoints} rubricPoints={rubricPoints} inSplit={true}
                       grammar={gram.res} grammarErr={gram.err} lint={lintNow}
@@ -396,7 +504,7 @@ export default function Home() {
                       preTrace={preseedTrace} prePlan={preseedPlan}
                       fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
                       pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
-                      camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
+                      camItems={camItems} camCleared={camClearedAct} camFading={camFadingAct} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
                   </div>
                   <div className="split-right">
                     <div className="split-right-head">Your revised text — edit here</div>
@@ -411,7 +519,7 @@ export default function Home() {
                   <div className="show-text-bar">
                     <button className="show-text-btn" onClick={() => setSplitMode(true)}>Show revised text →</button>
                   </div>
-                  <FullResult a={full.res} setTip={setTip} hoveredPoint={tip?.p?._point}
+                  <FullResult a={act.res} setTip={setTip} hoveredPoint={tip?.p?._point}
                     tracePoints={tracePoints} planPoints={planPoints} points={points}
                     consistencyPoints={consistencyPoints} rubricPoints={rubricPoints} inSplit={false}
                     grammar={gram.res} grammarErr={gram.err} lint={lintNow}
@@ -419,14 +527,14 @@ export default function Home() {
                     preTrace={preseedTrace} prePlan={preseedPlan}
                     fading={fading} onAddressed={onAddressed} onDisagree={onDisagree}
                     pendingAddressed={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree}
-                    camItems={camItems} camCleared={camCleared} camFading={camFading} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
+                    camItems={camItems} camCleared={camClearedAct} camFading={camFadingAct} clearCam={clearCam} applyGrammarFix={applyGrammarFix} />
                 </div>
               )}
 
               {/* Re-check + revisions — at the BOTTOM of the results */}
               <div className="recheck-bar">
-                <button className="primary" onClick={onRunClick} disabled={full.loading}>
-                  {full.loading ? <><span className="spinner" />Re-checking…</> : "↻ Re-check (after edits)"}
+                <button className="primary" onClick={onRunClick} disabled={anyLoading}>
+                  {anyLoading ? <><span className="spinner" />Re-checking…</> : (multi ? `↻ Re-check (${selectedModels.length} models)` : "↻ Re-check (after edits)")}
                 </button>
                 <button className="ghost" onClick={newTaskClick}>New task</button>
                 {revisions.length > 0 && <span className="rev-pill">Revision {revisions.length}</span>}
@@ -464,6 +572,8 @@ export default function Home() {
               )}
             </div>
           )}
+        </div>
+        )}
 
         {/* SUBMIT */}
         <div className="card" style={{ borderColor: "var(--ink)" }}>
@@ -471,7 +581,14 @@ export default function Home() {
           <p className="note" style={{ marginBottom: 12 }}>Saves this task (ID, trace/plan, and your check) for the reviewer. Run the check first.</p>
           {submitErr && <div className="banner-err" style={{ marginBottom: 12 }}>{submitErr}</div>}
           {!canSubmit && !submitted && (
-            <div className="gate-note">Clear all camera checks above (mark each <b>Checked</b> or <b>Not relevant</b>) before submitting.</div>
+            <div className="gate-note">
+              {anyLoading
+                ? <>Some models are still reviewing — wait for them to finish before submitting.</>
+                : <>Clear all camera checks above (mark each <b>Checked</b> or <b>Not relevant</b>) before submitting.
+                    {multi && camPendingByModel.some((x) => x.pending > 0) && (
+                      <> Pending: {camPendingByModel.filter((x) => x.pending > 0).map((x) => `${(CHECK_MODELS.find((m) => m.id === x.mid) || {}).label || x.mid} (${x.pending})`).join(", ")} — open that tab to clear them.</>
+                    )}</>}
+            </div>
           )}
           {submitted ? (
             <div className="banner-ok">✓ Submitted. Task <b>{taskId}</b> is saved.
@@ -481,7 +598,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="footer-note">Rehearsal / QC tool · your own task content · powered by Claude Opus 4.8.</div>
+        <div className="footer-note">Rehearsal / QC tool · your own task content · powered by Claude Opus 4.8 (+ optional GPT-5.5 & Gemini 3.1 Pro second opinions).</div>
       </div>
       <ChatAssistant askerName={taskerName} />
     </>

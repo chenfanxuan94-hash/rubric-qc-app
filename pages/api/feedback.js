@@ -21,8 +21,14 @@ export default async function handler(req, res) {
       action: e.action || null,
       text_changed: (typeof e.textChanged === "boolean") ? e.textChanged : null,
       note: e.note || null,
+      model: e.model || null, // which model flagged the issue (v3.9)
     }));
-    const { error } = await sb.from("feedback").insert(rows);
+    let { error } = await sb.from("feedback").insert(rows);
+    if (error && /model/.test(error.message || "")) {
+      // migration not run yet — retry without the model column so feedback is never lost
+      const legacy = rows.map(({ model, ...rest }) => rest);
+      ({ error } = await sb.from("feedback").insert(legacy));
+    }
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true, logged: rows.length });
   }

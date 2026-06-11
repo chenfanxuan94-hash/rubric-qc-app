@@ -1,6 +1,26 @@
 # Rubric QC Tool — version log
 
-## v3.8.2  (current)
+## v3.9.0  (current) — optional multi-model review (2nd & 3rd opinions)
+- NEW "AI reviewers for this check" picker above Run check: Claude Opus 4.8 always runs (locked); taskers can ADD GPT-5.5 (medium thinking) and/or Gemini 3.1 Pro (high thinking) when they have time. Different models catch different blind spots.
+- All selected models get the IDENTICAL prompts/rubric/training; they run IN PARALLEL, each as its own request, and results appear in tabs AS EACH FINISHES — the first model done becomes the active tab so review starts immediately.
+- With one model selected, the tool looks and behaves EXACTLY as before (no tabs, same flow).
+- Each tab is the full existing results experience: counts, consistency block, per-issue Addressed/Disagree (logged per model), camera gate, side-by-side working view with that model's highlights, in-place editing — everything.
+- Disagree suppressions are tracked per model (disagreeing with a GPT flag won't suppress Opus's).
+- SUBMIT gate now spans models: every model that returned a result must have its camera checks cleared (the gate note names which tab still has pending checks). Submitting waits for all selected models to finish.
+- Submission stores Opus as the primary analysis/score (continuity with existing data); the other models' full outputs + timings ride inside section_results (jsonb) — NO submissions migration needed.
+- Feedback rows now record WHICH model flagged the issue (optional migration below; without it, feedback still logs, just without the model column).
+- Grammar sweep & SOP linter unchanged (they review the text once, shared across tabs). Chatbot, admin, scoring all unchanged.
+- Robustness: JSON truncation repair ported to the parser; check endpoint maxDuration raised to 800s (Vercel Pro).
+
+### One-time setup for v3.9.0
+1. Vercel → rubric-qc-app → Settings → Environment Variables → ADD:
+   - OPENAI_API_KEY  (for GPT-5.5)
+   - GEMINI_API_KEY  (for Gemini 3.1 Pro)
+   (without these, those models' tabs show a clear "key not set" error; Opus is unaffected)
+2. OPTIONAL Supabase migration (records which model each feedback came from):
+   alter table public.feedback add column if not exists model text;
+
+## v3.8.2
 - FIXED: the in-place edit popup no longer gets cut off on the right (or any edge). It's now rendered in a portal to <body>, so no scrolling/overflow ancestor can clip it, and it's clamped to the viewport (horizontal clamp at render time using its known width, plus a measured vertical flip above the highlight when near the bottom). If it's ever taller than the screen it scrolls internally.
 - No new DB migration.
 
