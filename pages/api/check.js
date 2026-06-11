@@ -8,7 +8,20 @@ import { runOpenAI } from "../../lib/openaiCall.js";
 import { checkModelById } from "../../lib/checkModels.js";
 import { buildSystemPrompt, buildUserMessage } from "../../lib/checkPrompt.js";
 
-export const config = { maxDuration: 800 };
+export const config = { maxDuration: 800, api: { bodyParser: { sizeLimit: "12mb" } } };
+
+// parse client data-URL frames -> [{media_type, data}], hard caps for safety
+function parseFrames(frames) {
+  if (!Array.isArray(frames)) return [];
+  const out = [];
+  for (const f of frames.slice(0, 6)) {
+    const m = typeof f === "string" && f.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) continue;
+    if (m[2].length > 1200000) continue; // ~0.9MB per frame max
+    out.push({ media_type: m[1], data: m[2] });
+  }
+  return out;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -17,19 +30,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Provide at least a revised trace or revised plan." });
   }
 
+  const images = parseFrames(payload.frames);
+  const { frames, ...rest } = payload;
   const system = buildSystemPrompt();
-  const user = buildUserMessage(payload);
+  const user = buildUserMessage({ ...rest, frameCount: images.length });
   const m = checkModelById(payload.modelId || "opus48");
   const t0 = Date.now();
 
   let result;
   if (!m || m.vendor === "anthropic") {
     // unchanged default path (env-configured Opus)
-    result = await runOpus({ system, user, maxTokens: 16000 });
+    result = await runOpus({ system, user, maxTokens: 16000, images });
   } else if (m.vendor === "gemini") {
-    result = await runGemini({ system, user, model: m.model, thinkingLevel: m.thinkingLevel, maxTokens: 32000 });
+    result = await runGemini({ system, user, model: m.model, thinkingLevel: m.thinkingLevel, maxTokens: 32000, images });
   } else {
-    result = await runOpenAI({ system, user, model: m.model, effort: m.effort, maxTokens: 45000 });
+    result = await runOpenAI({ system, user, model: m.model, effort: m.effort, maxTokens: 45000, images });
   }
 
   const ms = result.ms ?? (Date.now() - t0);

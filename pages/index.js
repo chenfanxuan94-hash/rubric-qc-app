@@ -45,6 +45,59 @@ export default function Home() {
   const [activeModel, setActiveModel] = useState("opus48");
   const userPickedTab = useRef(false);
   const [runNotices, setRunNotices] = useState([]);
+  // ---- footage frames (beta, v3.10) ----
+  const [sharing, setSharing] = useState(false);
+  const [frames, setFrames] = useState([]); // [{dataUrl, kb}]
+  const [burstIn, setBurstIn] = useState(0); // countdown
+  const shareVideoRef = useRef(null);
+  const shareStreamRef = useRef(null);
+
+  async function startShare() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      shareStreamRef.current = stream;
+      setSharing(true);
+      setTimeout(() => {
+        if (shareVideoRef.current) { shareVideoRef.current.srcObject = stream; shareVideoRef.current.play().catch(() => {}); }
+      }, 50);
+      stream.getVideoTracks()[0].addEventListener("ended", stopShare);
+    } catch { /* user cancelled the picker */ }
+  }
+  function stopShare() {
+    try { shareStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
+    shareStreamRef.current = null; setSharing(false); setBurstIn(0);
+  }
+  function grabFrame() {
+    const v = shareVideoRef.current;
+    if (!v || !v.videoWidth) return null;
+    const scale = Math.min(1, 1024 / v.videoWidth);
+    const c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL("image/jpeg", 0.7);
+    return { dataUrl, kb: Math.round(dataUrl.length * 0.75 / 1024) };
+  }
+  function captureOne() {
+    const f = grabFrame();
+    if (f) setFrames((cur) => [...cur, f].slice(0, 6));
+  }
+  function captureBurst() { // 3s countdown so you can switch to the footage window & press play
+    let n = 3; setBurstIn(n);
+    const cd = setInterval(() => {
+      n -= 1; setBurstIn(n);
+      if (n <= 0) {
+        clearInterval(cd);
+        let shots = 0;
+        const iv = setInterval(() => {
+          const f = grabFrame();
+          if (f) setFrames((cur) => [...cur, f].slice(0, 6));
+          shots += 1;
+          if (shots >= 6) clearInterval(iv);
+        }, 500);
+      }
+    }, 1000);
+  }
+  const framesKb = frames.reduce((a, f) => a + f.kb, 0);
   const [gram, setGram] = useState({ loading: false, res: null, err: null });
   const [cam, setCam] = useState({ loading: false, res: null, err: null });
   const [missing, setMissing] = useState(null); // missing revised fields
@@ -118,6 +171,7 @@ export default function Home() {
     selectedModels.forEach((mid) => {
       callApi("/api/check", {
         ...base(), modelId: mid,
+        frames: frames.map((f) => f.dataUrl),
         priorFindings: prevFindings[mid] || null,
         suppressed: suppressedList.filter((s) => !s.model || s.model === mid).map(({ model, ...rest }) => rest),
       }, 780000).then((d) => {
@@ -241,7 +295,7 @@ export default function Home() {
     const d = await callApi("/api/submit", {
       ...base(),
       analysis: primary,
-      sectionResults: { camera: cam.res, grammar: gram.res, models: extraModels, modelSelection: selectedModels, modelTimes: Object.fromEntries(Object.entries(runs).map(([mid, r]) => [mid, r?.ms ?? null])) },
+      sectionResults: { camera: cam.res, grammar: gram.res, framesUsed: frames.length, models: extraModels, modelSelection: selectedModels, modelTimes: Object.fromEntries(Object.entries(runs).map(([mid, r]) => [mid, r?.ms ?? null])) },
       revisions,
       score: scoreOf(primary),
     }, 30000);
@@ -263,7 +317,7 @@ export default function Home() {
     setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
     setMissing(null); setCtxMissing(null); setSubmitted(false); setSubmitErr(null);
     setRevisions([]); setPrevFindings({}); setShowHistory(false); setUnsavedModal(false);
-    setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" }); setSplitMode(false);
+    setDismissed({}); setFading({}); setSuppressedList([]); setCamCleared({}); setCamFading({}); setPendingAddressed(null); setResultText({ trace: "", plan: "" }); setSplitMode(false); setFrames([]); stopShare();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -413,6 +467,38 @@ export default function Home() {
               {cam.err && <div className="banner-err" style={{ marginTop: 10 }}>{cam.err}</div>}
               {cam.res && <CameraResult a={cam.res} />}
             </div>
+          </div>
+
+          {/* FOOTAGE FRAMES (beta, v3.10) — share the window playing the footage; capture frames for the AI */}
+          <div className="foot-panel">
+            <div className="mp-head">📺 Footage frames <span className="beta-tag">beta</span></div>
+            <div className="mp-note">Optional: share the <b>window or tab playing the task footage</b>, capture a few frames at the decision moment, and the AI can visually verify the text against them. Tip: put the footage window and this tool <b>side by side</b>; capture the camera grid once for context, then the zoomed decision camera (usually SVC-F). Frames are sent to the AI for this check only — they are <b>never stored</b>.</div>
+            {!sharing ? (
+              <button className="ghost" onClick={startShare}>Share footage view…</button>
+            ) : (
+              <div className="foot-live">
+                <div className="foot-prevwrap">
+                  <video ref={shareVideoRef} muted playsInline className="foot-preview" />
+                  {burstIn > 0 && <div className="foot-count">{burstIn}</div>}
+                </div>
+                <div className="foot-btns">
+                  <button className="primary" onClick={captureOne} disabled={frames.length >= 6}>📸 Capture frame</button>
+                  <button className="ghost" onClick={captureBurst} disabled={burstIn > 0 || frames.length >= 6}>🎞 Burst (6 over 3s, starts in 3…)</button>
+                  <button className="ghost" onClick={stopShare}>Stop sharing</button>
+                </div>
+              </div>
+            )}
+            {frames.length > 0 && (
+              <div className="foot-frames">
+                {frames.map((f, i) => (
+                  <div className="foot-thumb" key={i}>
+                    <img src={f.dataUrl} alt={"frame " + (i + 1)} />
+                    <button className="foot-x" onClick={() => setFrames((cur) => cur.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                ))}
+                <div className="foot-meta">{frames.length}/6 · ~{framesKb} KB {framesKb > 3000 && <b style={{ color: "var(--red)" }}>— too heavy, remove a frame</b>}</div>
+              </div>
+            )}
           </div>
 
           {/* MODEL PICKER (v3.9) — which AIs review this task; applies to Run check and Re-check */}
@@ -702,6 +788,7 @@ function TipCard({ tip }) {
       <div className="tip-fix">{p.fix || p.title}</div>
       {p.why && <div className="tip-row"><b>Why:</b> {p.why}</div>}
       {p.evidence && p.evidence !== "—" && <div className="tip-row"><b>Evidence:</b> <span className="ev">{p.evidence}</span></div>}
+      {p.visual_check && <div className="tip-row"><b>👁 Frames:</b> {p.visual_check}{p.visual_note ? " — " + p.visual_note : ""}</div>}
       {p.confirm && <div className="tip-cam">📷 {p.confirm}</div>}
     </div>
   );
@@ -884,6 +971,7 @@ function IssueRow({ p, fading, onAddressed, onDisagree, pending, confirmAddresse
           {p.why && <div className="dr"><b>Why:</b> {p.why}</div>}
           {p.detail && !p.why && <div className="dr">{p.detail}</div>}
           {p.evidence && p.evidence !== "—" && <div className="dr"><b>Evidence:</b> <span className="ev">{p.evidence}</span></div>}
+          {p.visual_check && <div className={"dr vischeck " + p.visual_check}><b>{p.visual_check === "confirmed" ? "👁 Frames: confirmed" : p.visual_check === "contradicted" ? "👁 Frames: CONTRADICTED" : "👁 Frames: not visible"}</b>{p.visual_note ? " — " + p.visual_note : ""}</div>}
         </div>
       )}
       {isPending ? (
@@ -1041,6 +1129,7 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
       pending={pendingAddressed} confirmAddressedAnyway={confirmAddressedAnyway} convertToDisagree={convertToDisagree} />
   );
 
+  const framesSummary = a && a.frames_summary ? String(a.frames_summary) : null;
   return (
     <div className="result">
       {/* 1. What changed — bigger */}
@@ -1050,6 +1139,11 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
 
       {/* 2. Big counts */}
       <BigCounts a={a} />
+
+      {/* 2b. What the footage frames show (beta) */}
+      {framesSummary && (
+        <div className="frames-sum"><b>👁 What the frames show:</b> {framesSummary} <span className="muted">— frames are samples; still confirm against the full video.</span></div>
+      )}
 
       {/* 3. Consistency block — green/red, headline inside, expand for issues + explanation */}
       <details className={"consist-block " + (hasConsistencyProblem ? "bad" : "ok")} open={hasConsistencyProblem}>

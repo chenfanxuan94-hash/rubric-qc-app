@@ -1,6 +1,13 @@
 # Rubric QC Tool — version log
 
-## v3.9.0  (current) — optional multi-model review (2nd & 3rd opinions)
+## v3.10.0  (current) — FOOTAGE FRAMES (BETA)
+- New optional "📺 Footage frames (beta)" panel: share the window/tab playing the task footage (browser screen-share, one click), see a live preview, then 📸 Capture single frames or 🎞 Burst (6 frames over 3s, with a 3-2-1 countdown so you can switch to the footage window and press play). Up to 6 frames, auto-downscaled/compressed.
+- Frames travel with Run check / Re-check to ALL selected models. The models visually verify the text against them: every finding gains "👁 Frames: confirmed / CONTRADICTED / not visible" + a one-line note, and the results show "What the frames show" up top.
+- Guardrails: frames are samples — the models are instructed that absence in frames is NEVER proof of absence; nothing scene-related is invented. Frames are used for the check only and are NEVER stored (submissions record only the frame COUNT). Best workflow: footage window and this tool side by side; capture the camera grid once for context, then the zoomed decision camera.
+- BETA: confirm with management before team-wide use (frames of footage are sent to the model APIs for the check).
+- No DB migration. Single-model and no-frames behavior unchanged.
+
+## v3.9.0 — optional multi-model review (2nd & 3rd opinions)
 - NEW "AI reviewers for this check" picker above Run check: Claude Opus 4.8 always runs (locked); taskers can ADD GPT-5.5 (medium thinking) and/or Gemini 3.1 Pro (high thinking) when they have time. Different models catch different blind spots.
 - All selected models get the IDENTICAL prompts/rubric/training; they run IN PARALLEL, each as its own request, and results appear in tabs AS EACH FINISHES — the first model done becomes the active tab so review starts immediately.
 - With one model selected, the tool looks and behaves EXACTLY as before (no tabs, same flow).
