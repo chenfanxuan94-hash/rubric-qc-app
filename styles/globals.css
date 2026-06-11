@@ -676,3 +676,9 @@ textarea.locked{background:var(--bg);color:var(--muted);cursor:not-allowed;}
 
 /* v3.10.2 — model's read in camera checks */
 .cam-modelans{display:block;margin-top:5px;font-size:13px;font-weight:600;color:#0F766E;background:var(--teal-pale);border:1px solid var(--teal-lite);border-radius:7px;padding:6px 9px;}
+
+/* v3.10.3 — bigger frames summary + color-coded camera reads */
+.frames-sum{font-size:16.5px;line-height:1.6;font-weight:500;}
+.fs-caveat{font-size:13px;color:#475569;font-weight:500;}
+.cam-modelans.high{background:var(--green-bg);border-color:var(--green-border);color:#166534;}
+.cam-modelans.unsure{background:var(--amber-bg);border-color:var(--amber);color:#92400E;}

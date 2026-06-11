@@ -1071,7 +1071,7 @@ function CameraGate({ items, cleared, fading, clearCam }) {
         {items.map((q, i) => cleared[i] ? null : (
           <div className={"camitem" + (fading[i] ? " fading" : "")} key={i}>
             <span className="camq">{q.question}
-              {q.model_answer && <span className="cam-modelans">👁 Model's read (suggestion only — verify yourself): {q.model_answer}</span>}
+              {q.model_answer && <span className={"cam-modelans " + (q.model_confidence === "high" ? "high" : "unsure")}>{q.model_confidence === "high" ? "🟢 Likely" : "🟡 Can't confirm"} (verify yourself): {q.model_answer}</span>}
             </span>
             <div className="cambtns">
               <button className="cb-yes" onClick={() => clearCam(i, "checked")}>Checked</button>
@@ -1161,7 +1161,7 @@ function FullResult({ a, setTip, hoveredPoint, tracePoints, planPoints, points, 
 
       {/* 2b. What the footage frames show (beta) */}
       {framesSummary && (
-        <div className="frames-sum"><b>👁 What the frames show:</b> {framesSummary} <span className="muted">— frames are samples; still confirm against the full video.</span></div>
+        <div className="frames-sum"><b>👁 Frames show:</b> {framesSummary} <span className="fs-caveat">— still confirm on the full video.</span></div>
       )}
 
       {/* 3. Consistency block — green/red, headline inside, expand for issues + explanation */}
