@@ -1,5 +1,11 @@
 # Rubric QC Tool — version log
 
+## v3.11.0  (current) — Text Route context field
+- New "Text Route" input in Part 2 (below the Driving Plan, above Minimal Input). This is the GIVEN context field from the actual labeling tool — it is NOT authored or edited by the tasker.
+- It is passed to every model as AUTHORITATIVE context and used ONLY for consistency checking: if the Thinking Trace or Driving Plan describes a maneuver/direction that contradicts the Text Route (e.g. Text Route says left turn but the plan turns right), the model flags it as an M3 consistency issue and frames the fix as making the trace/plan match the Text Route (then confirm on camera).
+- The model is explicitly told NOT to flag the Text Route itself, NOT to suggest editing it, and not to treat its silence as a contradiction. Optional — leave blank and behavior is unchanged.
+- Text Route rides in the existing check payload and is saved with the submission (section_results); NO DB migration.
+
 ## v3.10.1  (current) — footage beta tuned for real 10–15s clips + grid teaching
 - 🎬 RECORD CLIP replaces the 3s burst: 3-2-1 countdown, then 1 frame/second for up to 15 seconds (Stop anytime) — samples the WHOLE clip; up to 16 frames (clip frames auto-compressed smaller to fit).
 - Each frame is TAGGED with what's on screen (full grid or a specific zoomed camera, via a small selector) and its ~t= second within the clip; tags show on the thumbnails and are passed to the AI in order.

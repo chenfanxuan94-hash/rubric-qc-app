@@ -33,6 +33,7 @@ export default function Home() {
   const [preseedTrace, setPreseedTrace] = useState("");
   const [revisedTrace, setRevisedTrace] = useState("");
   const [preseedPlan, setPreseedPlan] = useState("");
+  const [textRoute, setTextRoute] = useState(""); // given context, NOT labeler-authored
   const [revisedPlan, setRevisedPlan] = useState("");
   const [cameras, setCameras] = useState([]);
   const [temporal, setTemporal] = useState(false);
@@ -131,7 +132,7 @@ export default function Home() {
 
   const setSkip = (id, v) => setSkipAnswers((s) => ({ ...s, [id]: s[id] === v ? "" : v }));
   const toggleCam = (c) => setCameras((cs) => (cs.includes(c) ? cs.filter((x) => x !== c) : [...cs, c]));
-  const base = () => ({ taskerName, taskId, triageNote, skipped, skipAnswers, preseedTrace, revisedTrace, preseedPlan, revisedPlan, cameras, temporal });
+  const base = () => ({ taskerName, taskId, triageNote, skipped, skipAnswers, preseedTrace, revisedTrace, preseedPlan, revisedPlan, textRoute, cameras, temporal });
 
   function noticesFor() {
     const n = [];
@@ -318,7 +319,7 @@ export default function Home() {
 
   function resetForNext() {
     setTaskId(""); setTriageNote(""); setSkipped(false); setSkipAnswers({});
-    setPreseedTrace(""); setRevisedTrace(""); setPreseedPlan(""); setRevisedPlan("");
+    setPreseedTrace(""); setRevisedTrace(""); setPreseedPlan(""); setRevisedPlan(""); setTextRoute("");
     setCameras([]); setTemporal(false);
     setRuns({}); setRunNotices([]); setActiveModel(selectedModels[0] || "opus48"); userPickedTab.current = false;
     setGram({ loading: false, res: null, err: null }); setCam({ loading: false, res: null, err: null });
@@ -500,6 +501,11 @@ export default function Home() {
               <textarea className={revisions.length > 0 ? "locked" : ""} readOnly={revisions.length > 0} value={preseedPlan} onChange={(e) => setPreseedPlan(e.target.value)} placeholder="Paste the original pre-seed plan (optional)..." /></div>
             <div className="field" style={{ marginBottom: 0 }}><label className="hint">Your revised plan{splitMode ? " · editing in side panel →" : ""}</label>
               <textarea value={revisedPlan} onChange={(e) => setRevisedPlan(e.target.value)} placeholder="Paste your edited plan..." readOnly={splitMode} className={splitMode ? "locked" : ""} /></div>
+          </div>
+
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Text Route <span className="hint" style={{ color: "var(--muted)" }}>· given context, not written by you — used only to check consistency</span></label>
+            <textarea value={textRoute} onChange={(e) => setTextRoute(e.target.value)} placeholder="Paste the Text Route from the task if provided (e.g. the intended maneuver / route description)..." style={{ minHeight: 70 }} />
           </div>
 
           {/* Minimal Input — part of the same combined evaluation */}
