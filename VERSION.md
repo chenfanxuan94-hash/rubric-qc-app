@@ -1,5 +1,7 @@
 # Rubric QC Tool — version log
 
+## v3.14.1  (current) — second opinion moved to gpt-5.6-sol
+
 ## v3.14.0  (current) — GPT-5.6 Terra + active route/plan cross-check
 - Second-opinion model switched from GPT-5.5 to gpt-5.6-terra.
 - Text Route consistency is now an ACTIVE cross-check of the plan's maneuver against the route's next instruction (e.g. route 'turn left in 50 m' vs a plan that continues straight -> M3), with concrete contradiction examples in the prompt.

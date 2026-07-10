@@ -707,7 +707,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="footer-note">Rehearsal / QC tool · your own task content · powered by Claude Opus 4.8 (+ optional GPT-5.6 Terra & Gemini 3.1 Pro second opinions).</div>
+        <div className="footer-note">Rehearsal / QC tool · your own task content · powered by Claude Opus 4.8 (+ optional GPT-5.6 Sol & Gemini 3.1 Pro second opinions).</div>
       </div>
       <ChatAssistant askerName={taskerName} />
     </>
