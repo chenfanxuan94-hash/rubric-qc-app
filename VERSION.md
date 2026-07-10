@@ -1,5 +1,19 @@
 # Rubric QC Tool — version log
 
+## v3.14.0  (current) — GPT-5.6 Terra + active route/plan cross-check
+- Second-opinion model switched from GPT-5.5 to gpt-5.6-terra.
+- Text Route consistency is now an ACTIVE cross-check of the plan's maneuver against the route's next instruction (e.g. route 'turn left in 50 m' vs a plan that continues straight -> M3), with concrete contradiction examples in the prompt.
+
+## v3.13.0  (current) — stronger missed-Temporal detection
+- With frames: the model now ACTIVELY compares frames in time order for decision-relevant motion (cut-in, pedestrian/animal crossing, light change, lead car start/stop). Visible motion with Temporal unselected is flagged as a real m17 miss, and seen motion overrides the text even if the caption never mentions it.
+- Text-only: if the caption itself describes motion (merging, crossing, light turning, lead car moving) with Temporal unselected, it's flagged; if the caption describes no motion, Temporal is surfaced as a camera-check question rather than assumed fine (honest about the text-only limit).
+
+## v3.12.0  (current) — takeover-intent guardrail for M4
+- Before any M4 (Trace≠Human-Driving) judgment, the model now first infers WHY the human disengaged, using the triage note + the disengagement moment, and judges the caption against the human's CORRECTIVE INTENT rather than raw speed.
+- Key fix: if the AUTO car moved too early while a pedestrian/crossing-guard/hazard was still present and the human took over to STOP/HOLD, then a 'remain stopped until clear' caption is CORRECT — the tool no longer implies it should 'proceed' just because the vehicle eventually moves. Prevents a class of M4 false positives on stop/hold disengagements.
+- Triage phrases like 'poor yield / underyield / moved too early' are treated as describing the ADV's failure (why takeover happened), not a claim the human drove badly; fixes are framed neutrally, never as the human's driving being 'poor.'
+- M4 is still scene-dependent and surfaced only as a camera check, never flagged from text.
+
 ## v3.11.0  (current) — Text Route context field
 - New "Text Route" input in Part 2 (below the Driving Plan, above Minimal Input). This is the GIVEN context field from the actual labeling tool — it is NOT authored or edited by the tasker.
 - It is passed to every model as AUTHORITATIVE context and used ONLY for consistency checking: if the Thinking Trace or Driving Plan describes a maneuver/direction that contradicts the Text Route (e.g. Text Route says left turn but the plan turns right), the model flags it as an M3 consistency issue and frames the fix as making the trace/plan match the Text Route (then confirm on camera).

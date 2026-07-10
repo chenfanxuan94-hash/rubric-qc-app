@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     // unchanged default path (env-configured Opus)
     result = await runOpus({ system, user, maxTokens: 16000, images });
   } else if (m.vendor === "gemini") {
-    result = await runGemini({ system, user, model: m.model, thinkingLevel: m.thinkingLevel, maxTokens: 32000, images });
+    result = await runGemini({ system, user, model: m.model, thinkingLevel: m.thinkingLevel, maxTokens: 48000, images });
   } else {
     result = await runOpenAI({ system, user, model: m.model, effort: m.effort, maxTokens: 45000, images });
   }
